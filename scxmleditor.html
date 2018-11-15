@@ -79,11 +79,10 @@
 'use strict';
 
 import { loadFromURL as loadSCXML } from './scxmldom.js';
-import NeatXML                      from './neatxml.js';
 import SCXMLEditor                  from './scxmleditor.js';
 
 let $ed, $doc;
-loadSCXML('http://localhost:5000/launcher.scxml', doc => {
+loadSCXML('http://localhost:5000/test/launcher.scxml', doc => {
 	$ed = new SCXMLEditor(document.querySelector('svg'), $doc=doc);
 	window.$doc = $doc;
 	window.$ed  = $ed;
