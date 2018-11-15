@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:nv="http://nvidia.com/drive/architect" version="1">
+   <state id="AwaitingChoice" nv:xywh="20 20 350 80">
+      <onentry><script>
+         app.views.launcher.buttons.av.disabled   = false
+         app.views.launcher.buttons.rec.disabled  = false
+         app.views.launcher.buttons.ix.disabled   = false
+         app.views.launcher.buttons.exit.disabled = false
+         app.views.launcher.buttons.ota.hidden    = false
+
+         app.views.eula:setVisible(false)
+      </script></onentry>
+      <state id="UpToDate" nv:xywh="30 50 160 40">
+         <onentry><script>
+            app.views.launcher.buttons.ota.hidden = true
+         </script></onentry>
+         <transition event="ota.available" target="UpdateAvailable" type="internal"/>
+      </state>
+      <state id="UpdateAvailable" nv:xywh="200 50 160 40">
+         <onentry><script>
+            app.views.launcher.buttons.ota.hidden = false
+            app:startTimer('otaavailable')
+         </script></onentry>
+         <onexit><script>
+            app:clearTimer('otaavailable')
+         </script></onexit>
+         <transition event="button.showupdate" target="GoParkYourself" type="internal"/>
+      </state>
+      <transition event="ota.updateinprocess" target="UpdateInProcess" type="internal"/>
+      <transition event="ota.updatefailed" target="UpdateFailed" type="internal"/>
+      <transition event="button.exit"><script>app:setWindowShouldClose(true)</script></transition>
+      <onexit><script>
+         app.views.launcher.buttons.av.disabled   = true
+         app.views.launcher.buttons.rec.disabled  = true
+         app.views.launcher.buttons.ix.disabled   = true
+         app.views.launcher.buttons.exit.disabled = true
+         app.views.launcher.buttons.ota.hidden    = true
+      </script></onexit>
+   </state>
+
+   <state id="GoParkYourself" nv:xywh="20 120 390 40">
+      <onentry><script>app.views.park:setVisible(true)</script></onentry>
+      <transition event="button.cancel" target="UpdateAvailable" type="internal"/>
+      <transition event="button.confirm" target="ConfirmOTA" type="internal"/>
+      <onexit><script>app.views.park:setVisible(false)</script></onexit>
+   </state>
+
+   <state id="ConfirmOTA" nv:xywh="20 180 390 100">
+      <onentry><script>app.views.eula:setVisible(true)</script></onentry>
+      <state id="EULARejected" nv:xywh="30 210 180 60">
+         <onentry><script>
+            app.views.eula.buttons.ok.disabled = true
+            app.views.eula.buttons.accept.active = false
+            app.views.eula.buttons.notaccept.active = true
+         </script></onentry>
+         <transition event="button.accepteula" target="EULAAccepted" type="internal"/>
+      </state>
+      <state id="EULAAccepted" nv:xywh="220 210 180 60">
+         <onentry><script>
+            app.views.eula.buttons.ok.disabled = false
+            app.views.eula.buttons.accept.active = true
+            app.views.eula.buttons.notaccept.active = false
+         </script></onentry>
+         <transition event="button.donotaccept" target="EULARejected" type="internal"/>
+         <transition event="button.accept" target="UpdateInProcess" type="internal"/>
+      </state>
+      <transition event="button.cancel" target="UpdateAvailable" type="internal"/>
+      <onexit><script>app.views.eula:setVisible(false)</script></onexit>
+   </state>
+
+   <state id="UpdateInProcess" nv:xywh="520 10 180 40">
+      <onentry><script>app.views.progress:setVisible(true)</script></onentry>
+      <transition event="ota.updatefailed" target="UpdateFailed" type="internal"/>
+      <transition event="ota.updatesucceeded" target="UpToDate" type="internal"/>
+      <onexit><script>app.views.progress:setVisible(false)</script></onexit>
+   </state>
+
+   <state id="UpdateFailed" nv:xywh="520 60 180 40">
+      <onentry><script>app.views.failed:setVisible(true)</script></onentry>
+      <transition event="button.dismiss" target="AwaitingChoice" type="internal"/>
+      <onexit><script>app.views.failed:setVisible(false)</script></onexit>
+   </state>
+</scxml>
