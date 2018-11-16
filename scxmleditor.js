@@ -1,12 +1,12 @@
 'use strict';
 
 const SSE = {};
+const nvNS  = 'http://nvidia.com/drive/architect';
+const svgNS = 'http://www.w3.org/2000/svg';
 
 SSE.Canvas = function(svg, scxmlDoc)
 {
 	this.svg         = svg;
-	this.states      = [];
-	this.transitions = [];
 	this.transCombos = {};
 	this.selection   = [];
 	this.g = {
@@ -24,6 +24,12 @@ SSE.Canvas = function(svg, scxmlDoc)
 SSE.Canvas.prototype.useSCXML = function(scxmlDoc)
 {
 	this.scxmlDoc = scxmlDoc;
+	this.observer = new MutationObserver(this.onDocChange.bind(this));
+	this.observer.observe(scxmlDoc.root, {childList:true, attributes:true, subtree:true});
+
+	Object.setPrototypeOf(SSE.State, Object.getPrototypeOf(scxmlDoc.root));
+
+	// Turn off the grid when setting the initial positions of items
 	this.gridActive = false;
 	scxmlDoc.states.forEach(this.addState.bind(this));
 	scxmlDoc.transitions.forEach(this.addTransition.bind(this));
@@ -32,18 +38,34 @@ SSE.Canvas.prototype.useSCXML = function(scxmlDoc)
 
 SSE.Canvas.prototype.addState = function(state)
 {
+	// The root SCXML element does not get displayed visually
 	if (state===this.scxmlDoc.root) return;
-	const s = new SSE.State(this, state);
-	this.states.push(s);
-	this.g.shadows.appendChild(s.shadow);
-	this.g.content.appendChild(s.main);
 
-	s.main.addEventListener('mousedown', evt=>{
+	Object.setPrototypeOf(state, SSE.State);
+
+	const ego = state._sse = {
+		canvas:   this,
+		shadow:   make('rect', {rx:10, ry:10}),
+		main:     make('g', {transform:'translate(0,0)', 'class':'state'}),
+		incoming: [],
+		outgoing: [],
+	};
+	if (state.states.length) ego.main.classList.add('parent');
+	ego.tx = ego.main.transform.baseVal.getItem(0);
+	ego.rect  = make('rect', {_dad:ego.main, rx:10, ry:10});
+	ego.label = make('text', {_dad:ego.main, _text:state.id});
+	// canvas.makeDraggable(this.main, this);
+
+	this.g.shadows.appendChild(ego.shadow);
+	this.g.content.appendChild(ego.main);
+
+	state.xywh = state.xywh;
+	// state.updateAttribute('rgba');
+
+	ego.main.addEventListener('mousedown', evt=>{
 		evt.stopPropagation();
-		this.select(s);
+		this.select(state);
 	}, false);
-
-	return s;
 };
 
 SSE.Canvas.prototype.addTransition = function(start,end,events)
@@ -70,7 +92,6 @@ SSE.Canvas.prototype.transitionsBetween = function(start,end){
 	if (!this.transCombos[start]) return [];
 	return this.transCombos[start][end] || [];
 }
-
 
 SSE.Canvas.prototype.makeDraggable = function(el,obj){
 	el.addEventListener('mousedown',function(evt){
@@ -100,124 +121,225 @@ SSE.Canvas.prototype.select = function(item){
 	}
 }
 
-// ****************************************************************************
-// ****************************************************************************
-// ****************************************************************************
-
-SSE.State = function(canvas, node)
-{
-	this.node   = node;
-	this.canvas = canvas;
-	this.shadow = make('rect',{rx:10, ry:10});
-	this.main   = make('g',{transform:'translate(0,0)', 'class':'state'});
-	if (this.node.states.length) this.main.classList.add('parent');
-	this._tx = this.main.transform.baseVal.getItem(0);
-	this.incoming = [];
-	this.outgoing = [];
-	this.rect     = make('rect', {_dad:this.main, rx:10, ry:10});
-	this.label    = make('text', {_dad:this.main, _text:node.id});
-	// canvas.makeDraggable(this.main, this);
-	this.xy.apply(this, node.xywh);
-	this.wh.apply(this, node.xywh.slice(2));
-};
-
-SSE.State.prototype.xy = function(x, y)
-{
-	const xywh = this.node.xywh;
-	this._x = x;
-	this._y = y;
-	if (this.canvas.gridActive)
-	{
-		[x,y] = [x,y].map(n => Math.round(n/this.canvas.gridSize)*this.canvas.gridSize);
+SSE.Canvas.prototype.snap = function(n){
+	if (this.gridActive) {
+		if (n.map) n=n.map(v=>Math.round(v/this.gridSize)*this.gridSize);
+		else       n=Math.round(n/this.gridSize)*this.gridSize;
 	}
-	xywh[0] = x;
-	xywh[1] = y;
-	this._tx.setTranslate(x, y);
-	setAttributes(this.shadow, {x:x, y:y});
-	this.incoming.forEach(ƒ('pickPath'));
-	this.outgoing.forEach(ƒ('pickPath'));
-	this.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
+	return n;
 }
 
-SSE.State.prototype.wh = function(w, h)
-{
-	const xywh = this.node.xywh;
-	if (this.canvas.gridActive)
-	{
-		[w,h] = [w,h].map(n => Math.round(n/this.canvas.gridSize)*this.canvas.gridSize);
-	}
-	xywh[2] = w;
-	xywh[3] = h;
-	setAttributes(this.rect,   {width:w, height:h});
-	setAttributes(this.shadow, {width:w, height:h});
-	const labelAtTop = this.node.states.length>0;
-	const y = labelAtTop ? 15 : h/2;
-	setAttributes(this.label,  {x:w/2, y:y});
-	this.incoming.forEach(ƒ('pickPath'));
-	this.outgoing.forEach(ƒ('pickPath'));
-	this.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
+SSE.Canvas.prototype.onDocChange = function(mutationList){
+	mutationList.forEach(m => {
+		switch(m.type) {
+			case 'childList':
+				m.addedNodes.forEach(n => {
+					console.log('TODO: maybe create a new visual node for', n);
+				});
+				m.removedNodes.forEach(n => {
+					if (this.docNodeToSSE.has(n)) {
+						console.log('TODO: remove SSE node for', n);
+					}
+				});
+			break;
+			case 'attributes':
+				if (m.target.updateAttribute) m.target.updateAttribute(m.attributeNamespace, m.attributeName);
+			break;
+		}
+	});
 }
 
-Object.defineProperties(SSE.State.prototype, {
-	x:{
-		get()
-		{
-			return this.node.xywh[0];
-		},
-		set(x)
-		{
-			this.xy(x, this.y);
+// ****************************************************************************
+// ****************************************************************************
+// ****************************************************************************
+
+
+SSE.State = Object.defineProperties({
+	startDragging(){
+		// Re-order this state to the top
+		// TODO: do this to all its children, too
+		this._sse.main.parentNode.appendChild(this.main);
+		this._x = this.x;
+		this._y = this.y;
+	},
+
+	handleDrag(dx,dy){
+		this.xy = [this._x+dx, this._y+dy];
+	},
+
+	select(){
+		this._sse.main.classList.add('selected');
+	},
+
+	deselect(){
+		this._sse.main.classList.remove('selected');
+	},
+
+	updateAttribute(attrNS, attrName){
+		const val = this.getAttributeNS(attrNS, attrName);
+		switch(attrName){
+			case 'xywh':
+				const ego = this._sse;
+				const [x,y,w,h] = val.split(/\s+/).map(Number);
+				ego.tx.setTranslate(x, y);
+				setAttributes(ego.shadow, {x:x, y:y});
+				ego.incoming.forEach(ƒ('pickPath'));
+				ego.outgoing.forEach(ƒ('pickPath'));
+
+				setAttributes(ego.rect,   {width:w, height:h});
+				setAttributes(ego.shadow, {width:w, height:h});
+				const labelAtTop = this.states.length>0;
+				const top = labelAtTop ? 15 : h/2;
+				setAttributes(ego.label,  {x:w/2, y:top});
+				ego.incoming.forEach(ƒ('pickPath'));
+				ego.outgoing.forEach(ƒ('pickPath'));
+
+				this.updateContainment();
+			break;
 		}
 	},
-	y:{
-		get()
-		{
-			return this.node.xywh[1];
-		},
-		set(y)
-		{
-			this.xy(this.x, y);
-		}
+
+	updateContainment(){
+		this._sse.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
+		this.states.forEach(ƒ('updateContainment'));
 	},
+},{
+	x: {
+		get(){ return this.xywh[0] },
+		set(x){ const xywh=this.xywh; xywh[0]=this._sse.canvas.snap(x); this.xywh=xywh }
+	},
+	y: {
+		get(){ return this.xywh[1] },
+		set(y){ const xywh=this.xywh; xywh[1]=this._sse.canvas.snap(y); this.xywh=xywh }
+	},
+	w: {
+		get(){ return this.xywh[2] },
+		set(w){ const xywh=this.xywh; xywh[2]=this._sse.canvas.snap(w); this.xywh=xywh }
+	},
+	h: {
+		get(){ return this.xywh[3] },
+		set(h){ const xywh=this.xywh; xywh[3]=this._sse.canvas.snap(h); this.xywh=xywh }
+	},
+	xy: {
+		get(){ return this.xywh.slice(0,2) },
+		set(xy){ const xywh=this.xywh; [xywh[0], xywh[1]]=this._sse.canvas.snap(xy); this.xywh=xywh }
+	},
+	wh: {
+		get(){ return this.xywh.slice(2) },
+		set(wh){ const xywh=this.xywh; [xywh[2], xywh[3]]=this._sse.canvas.snap(wh); this.xywh=xywh }
+	},
+	xywh: {
+		get(){
+            const xywh=this.getAttributeNS(nvNS, 'xywh');
+            return xywh ? xywh.split(/\s+/).map(Number) : [0,0,100,60];
+		},
+		set(xywh){ this.setAttributeNS(nvNS, 'xywh', xywh.join(' ')) }
+	},
+
 	containedWithinParent:{
 		get()
 		{
-			if (this.node.parent.isSCXML) return true;
-			const dad=this.node.parent.xywh, ego=this.node.xywh;
-			return (ego[0]>=dad[0] &&
-			        ego[1]>=dad[1] &&
-			        (ego[0]+ego[2]) <= (dad[0]+dad[2]) &&
-			        (ego[1]+ego[3]) <= (dad[1]+dad[3]));
+			if (this.parent.isSCXML) return true;
+			const dad=this.parent.xywh, ego=this.xywh;
+			return (ego[0]>=dad[0] && ego[1]>=dad[1] &&
+			        (ego[0]+ego[2])<=(dad[0]+dad[2]) &&
+			        (ego[1]+ego[3])<=(dad[1]+dad[3]));
 		}
-	}
+	},
+
+	r: {
+		get(){ return this.rgba[0] },
+		set(r){ const rgba=this.rgba; rgba[0]=r; this.rgba=rgba }
+	},
+	g: {
+		get(){ return this.rgba[1] },
+		set(g){ const rgba=this.rgba; rgba[1]=g; this.rgba=rgba }
+	},
+	b: {
+		get(){ return this.rgba[2] },
+		set(b){ const rgba=this.rgba; rgba[2]=b; this.rgba=rgba }
+	},
+	a: {
+		get(){ return this.rgba[3] },
+		set(a){ const rgba=this.rgba; rgba[3]=a; this.rgba=rgba }
+	},
+	rgba: {
+		get(){
+			const rgba = this.getAttributeNS(nvNS, 'rgba') || 'FFFFFF80';
+			return rgba.match(/[\da-f]{2}/gi).map(s=>parseInt(s,16));
+		},
+		set(rgba){ this.setAttributeNS(nvNS, 'rgba', array.map(toHex255).join('')) }
+	},
 });
 
+// SSE.State.prototype.xy = function(x, y)
+// {
+// 	const xywh = this.node.xywh;
+// 	this._x = x;
+// 	this._y = y;
+// 	if (this.canvas.gridActive)
+// 	{
+// 		[x,y] = [x,y].map(n => Math.round(n/this.canvas.gridSize)*this.canvas.gridSize);
+// 	}
+// 	xywh[0] = x;
+// 	xywh[1] = y;
+// 	this._tx.setTranslate(x, y);
+// 	setAttributes(this.shadow, {x:x, y:y});
+// 	this.incoming.forEach(ƒ('pickPath'));
+// 	this.outgoing.forEach(ƒ('pickPath'));
+// 	this.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
+// }
 
-SSE.State.prototype.startDragging = function()
-{
-	// Re-order this state to the top
-	// TODO: do this to all its children, too
-	this.main.parentNode.appendChild(this.main);
-	this._x = this.x;
-	this._y = this.y;
-};
+// SSE.State.prototype.wh = function(w, h)
+// {
+// 	const xywh = this.node.xywh;
+// 	if (this.canvas.gridActive)
+// 	{
+// 		[w,h] = [w,h].map(n => Math.round(n/this.canvas.gridSize)*this.canvas.gridSize);
+// 	}
+// 	xywh[2] = w;
+// 	xywh[3] = h;
+// 	setAttributes(this.rect,   {width:w, height:h});
+// 	setAttributes(this.shadow, {width:w, height:h});
+// 	const labelAtTop = this.node.states.length>0;
+// 	const y = labelAtTop ? 15 : h/2;
+// 	setAttributes(this.label,  {x:w/2, y:y});
+// 	this.incoming.forEach(ƒ('pickPath'));
+// 	this.outgoing.forEach(ƒ('pickPath'));
+// 	this.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
+// }
 
-SSE.State.prototype.handleDrag = function(dx,dy)
-{
-	this.xy(this._x+dx, this._y+dy);
-};
+// SSE.State.prototype
 
-SSE.State.prototype.select = function()
-{
-	this.main.classList.add('selected');
-}
+        // Array of position and size of this state, in global document coordinates
+        // Mutating this array will not affect the document; you must assign an array to this property
+        // xywh:{
+        //     get()
+        //     {
+        //         const xywh = this.getAttributeNS(NVNS, 'xywh');
+        //         return xywh ? xywh.split(/\s+/).map(Number) : [0,0,100,60];
+        //     },
+        //     set(array)
+        //     {
+        //
+        //     },
+        // },
 
-SSE.State.prototype.deselect = function()
-{
-	this.main.classList.remove('selected');
-}
+        // Array of color values for this state, all in the range [0,255]
+        // Mutating this array will not affect the document; you must assign an array to this property
+        // rgba:{
+        //     get()
+        //     {
+        //         const rgba = this.getAttributeNS(NVNS, 'rgba') || 'FFFFFF80';
+        //         return rgba.match(/[\da-f]{2}/gi).map(s=>parseInt(s,16));
+        //     },
+        //     set(array)
+        //     {
+        //         this.setAttributeNS(NVNS, 'rgba', array.map(toHex255).join(''));
+        //     },
+        // },
 
-SSE.State.prototype.toString = _=>`<State "${this.id}">`;
+
 
 // ****************************************************************************
 // ****************************************************************************
@@ -295,29 +417,22 @@ SSE.Transition.prototype.deselect = function(){
 };
 */
 
-function ƒ(name)
-{
-	let v
+function ƒ(name){
+	let v;
 	const params=Array.prototype.slice.call(arguments,1);
 	return o=>(typeof (v=o[name])==='function' ? v.apply(o,params) : v);
 }
 
-function setAttributes(node, attr={})
-{
-	for (const k of Object.keys(attr))
-	{
+function setAttributes(node, attr={}){
+	for (const k of Object.keys(attr)){
 		node.setAttribute(k, attr[k]);
 	}
 }
 
-const svgNS = 'http://www.w3.org/2000/svg';
-function make(name, opts={})
-{
+function make(name, opts={}){
 	const el = document.createElementNS(svgNS, name);
-	for (const k of Object.keys(opts))
-	{
-		switch(k)
-		{
+	for (const k of Object.keys(opts)){
+		switch(k){
 			case '_dad':
 				opts[k].appendChild(el);
 			break;

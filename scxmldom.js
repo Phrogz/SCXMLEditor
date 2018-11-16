@@ -4,7 +4,6 @@ export { loadFromString, loadFromURL };
 
 // Namespaces for re-use
 const SVGNS = 'http://www.w3.org/2005/07/scxml';
-const NVNS  = 'http://nvidia.com/drive/architect';
 
 // Prototype injected into the document
 const SCXMLDoc = Object.setPrototypeOf(
@@ -134,15 +133,6 @@ const SCXMLState = Object.setPrototypeOf(
             child.id = doc.uniqueId(newId || this.id);
             this.appendChild(child);
 
-            // TODO: smarter heuristics for placing the child (and possibly growing this state)
-            // Inset the child within the parent
-            const xywh = this.xywh;
-            xywh[0] += xywh[3]*0.1;
-            xywh[1] += xywh[4]*0.1;
-            xywh[3] *= 0.8;
-            xywh[4] *= 0.8;
-            child.xywh = xywh;
-
             return child;
         },
 
@@ -218,34 +208,6 @@ const SCXMLState = Object.setPrototypeOf(
             {
                 return this.querySelectorAll(':scope > onexit > script');
             }
-        },
-
-        // Array of position and size of this state, in global document coordinates
-        // Mutating this array will not affect the document; you must assign an array to this property
-        xywh:{
-            get()
-            {
-                const xywh = this.getAttributeNS(NVNS, 'xywh');
-                return xywh ? xywh.split(/\s+/).map(Number) : [0,0,100,60];
-            },
-            set(array)
-            {
-                this.setAttributeNS(NVNS, 'xywh', array.join(' '));
-            },
-        },
-
-        // Array of color values for this state, all in the range [0,255]
-        // Mutating this array will not affect the document; you must assign an array to this property
-        rgba:{
-            get()
-            {
-                const rgba = this.getAttributeNS(NVNS, 'rgba') || 'FFFFFF80';
-                return rgba.match(/[\da-f]{2}/gi).map(s=>parseInt(s,16));
-            },
-            set(array)
-            {
-                this.setAttributeNS(NVNS, 'rgba', array.map(toHex255).join(''));
-            },
         },
 
         // Identifier for the state; setting to a conflicting value is allowed (see document.errorsByType.conflictingIds)
@@ -489,17 +451,20 @@ const SCXMLScript = Object.setPrototypeOf(
 );
 
 // Return a new SCXMLDocument from parsing SCXML source code
-function loadFromString(scxml) {
+function loadFromString(scxml)
+{
     const xmldoc = (new DOMParser).parseFromString(scxml, "text/xml");
     return wrapNode(xmldoc);
 }
 
 // Return a new SCXMLDocument by using XMLHttpRequest to load a URL
-function loadFromURL(url, callback) {
+function loadFromURL(url, callback)
+{
     loadURL(url, xml=>callback(loadFromString(xml)));
 }
 
-function loadURL(url, callback) {
+function loadURL(url, callback)
+{
     const xhr = new XMLHttpRequest;
     xhr.open('get', url);
     xhr.onerror = x => console.error('error loading '+url, x);
@@ -516,11 +481,14 @@ const nodeProtos = {
     transition:  SCXMLTransition,
     script:      SCXMLScript,
 }
-function wrapNode(el) {
+function wrapNode(el)
+{
     const proto = nodeProtos[el.nodeName]
     if (proto) Object.setPrototypeOf(el, proto);
     for (const c of el.children) wrapNode(c);
     return el;
 }
 
-function toHex255(n) { return (Math.round(n)%256).toString(16).padStart(2,'0') }
+function toHex255(n) {
+    return (Math.round(n)%256).toString(16).padStart(2,'0');
+}
