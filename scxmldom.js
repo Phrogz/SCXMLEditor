@@ -169,7 +169,7 @@ const SCXMLState = Object.setPrototypeOf(
         delete(){
             if (this.ownerDocument.root != this)
             {
-                this.parentNode.removeChild(this)
+                this.remove();
             }
         },
     },
@@ -180,6 +180,15 @@ const SCXMLState = Object.setPrototypeOf(
             get()
             {
                 return this.querySelectorAll(':scope > state, :scope > parallel, :scope > history');
+            }
+        },
+
+        // Array of all states under this state
+        // Mutating this array will not affect the document; use state.addChild() or state.delete() for that
+        descendants:{
+            get()
+            {
+                return this.querySelectorAll(':scope state, :scope parallel, :scope history');
             }
         },
 
@@ -426,11 +435,11 @@ const SCXMLScript = Object.setPrototypeOf(
         // Delete this script block
         delete(){
             const container = this.parentNode;
-            container.removeChild(this);
+            this.remove();
             // delete empty <onentry> or <onexit> containers
             if (container.childElementCount==0 && (container.tagName=='onentry' || container.tagName=='onexit'))
             {
-                container.parentNode.removeChild(container);
+                container.remove();
             }
         }
     },

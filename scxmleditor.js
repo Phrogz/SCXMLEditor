@@ -54,7 +54,7 @@ SSE.Canvas.prototype.addState = function(state)
 	ego.tx = ego.main.transform.baseVal.getItem(0);
 	ego.rect  = make('rect', {_dad:ego.main, rx:10, ry:10});
 	ego.label = make('text', {_dad:ego.main, _text:state.id});
-	// canvas.makeDraggable(this.main, this);
+	this.makeDraggable(ego.main, state);
 
 	this.g.shadows.appendChild(ego.shadow);
 	this.g.content.appendChild(ego.main);
@@ -93,21 +93,22 @@ SSE.Canvas.prototype.transitionsBetween = function(start,end){
 	return this.transCombos[start][end] || [];
 }
 
-SSE.Canvas.prototype.makeDraggable = function(el,obj){
+SSE.Canvas.prototype.makeDraggable = function(el, obj){
 	el.addEventListener('mousedown',function(evt){
 		// TODO: Transform from screen to SVG space for viewBox'd content
-		var lastX=evt.clientX, lastY=evt.clientY, dragging=false;
-		document.body.addEventListener('mousemove',onmove,false);
+
+		const sandbox={};
+		const startX=evt.clientX, startY=evt.clientY;
+		let dragging=false;
+		document.body.addEventListener('mousemove', onmove, false);
 		function onmove(evt){
 			evt.stopPropagation();
-			if (!dragging && (dragging=true) && obj.startDragging) obj.startDragging();
-			if (obj.handleDrag) obj.handleDrag(evt.clientX-lastX,evt.clientY-lastY);
-			lastX = evt.clientX;
-			lastY = evt.clientY;
+			if (!dragging && (dragging=true) && obj.startDragging) obj.startDragging(sandbox);
+			if (obj.handleDrag) obj.handleDrag(evt.clientX-startX, evt.clientY-startY, sandbox);
 		}
 		document.body.addEventListener('mouseup',function(){
 			document.body.removeEventListener('mousemove',onmove,false);
-			if (obj.finishDragging) obj.finishDragging();
+			if (obj.finishDragging) obj.finishDragging(sandbox);
 		},false);
 	},false);
 }
@@ -155,16 +156,17 @@ SSE.Canvas.prototype.onDocChange = function(mutationList){
 
 
 SSE.State = Object.defineProperties({
-	startDragging(){
+	startDragging(sandbox){
 		// Re-order this state to the top
 		// TODO: do this to all its children, too
-		this._sse.main.parentNode.appendChild(this.main);
-		this._x = this.x;
-		this._y = this.y;
+		sandbox.starts = new Map([this, ...this.descendants].map(n => [n, n.xy]));
+		for (const [n,xy] of sandbox.starts) {
+			n._sse.main.parentNode.appendChild(n._sse.main);
+		}
 	},
 
-	handleDrag(dx,dy){
-		this.xy = [this._x+dx, this._y+dy];
+	handleDrag(dx, dy, sandbox){
+		for (const [n,xy] of sandbox.starts) n.xy = [xy[0]+dx, xy[1]+dy];
 	},
 
 	select(){
