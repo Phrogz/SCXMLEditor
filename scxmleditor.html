@@ -11,7 +11,7 @@
 			-moz-user-select: none;
 			-ms-user-select: none;
 			user-select: none;
-      height: 100%
+			height: 100%
 		}
 		svg { display:block }
 		#shadows rect {
@@ -109,6 +109,7 @@
 
 import { loadFromURL as loadSCXML } from './scxmldom.js';
 import SCXMLEditor                  from './scxmleditor.js';
+import NeatXML                      from './neatxml.js';
 
 let $ed, $doc;
 loadSCXML('http://localhost:5000/test/launcher.scxml', doc => {
@@ -116,6 +117,12 @@ loadSCXML('http://localhost:5000/test/launcher.scxml', doc => {
 	window.$doc = $doc;
 	window.$ed  = $ed;
 });
+
+window.serialize = function() {
+	// Uses custom XML serializer to work around
+	// https://bugs.chromium.org/p/chromium/issues/detail?id=906807
+	console.log(NeatXML($doc,{strip:true, indent:'\t', sort:true}));
+}
 </script>
 
 </body></html>
