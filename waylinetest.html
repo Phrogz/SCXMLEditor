@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html><head>
+	<meta charset='utf-8'>
+	<title>Wayline Test</title>
+	<style type='text/css' media='all'>
+		html,body {
+			background:black;
+			margin:0; padding:0;
+      height: 100%
+		}
+		canvas { position:absolute; top:0; left:0; width:100%; height:100%; background:white; }
+	</style>
+</head><body>
+<canvas></canvas>
+<script>
+'use strict';
+const can = document.querySelector('canvas');
+const ctx = can.getContext('2d');
+let anchors = [
+	{x:100, y:100, horiz:0},
+	{x:100, y:100, horiz:0},
+	{x:100, y:100, horiz:0},
+	{x:100, y:100, horiz:0},
+	{x:100, y:100, horiz:0},
+	// {x:500,        horiz:0},
+	// {       y:250, horiz:1},
+	{x:950, y:400,       horiz:1},
+	// {x:950,        horiz:0},
+	// {       y:50, horiz:1},
+	{x:800, y:580, horiz:1},
+];
+
+// anchors = [{x:260,y:270,horiz:false,start:true},
+// 	{y:300,horiz:true},
+// 	{x:310,horiz:false},
+// 	{y:210,horiz:true},
+// 	{x:160,y:210,horiz:false,start:false}]
+
+setInterval(()=>{
+	anchors.forEach( (a,i)=>{
+		if ('x' in a) a.x = (Math.sin(Date.now()/((i+1)^i)/1e3)+1)*70*i+50;
+		if ('y' in a) a.y = (Math.cos(Date.now()/(((i+1)*2)^i)/1e3)+1)*400+50;
+		a.horiz = (i*Date.now()/10000)%20 < 10;
+	});
+	redraw();
+},30);
+
+function redraw() {
+	ctx.clearRect(0,0,can.width,can.height);
+	pathFromAnchors(anchors, 120);
+}
+
+function pathFromAnchors(anchors, maxRadius=Infinity) {
+	// Calculate intersection points
+	let prevPoint = anchors[0], nextPoint;
+	const pts = [prevPoint];
+	for (let i=1; i<anchors.length; ++i) {
+		nextPoint = Object.assign({}, anchors[i]);
+		// Interject an anchor of opposite orientation between two sequential anchors with the same orientation
+		if (nextPoint.horiz===prevPoint.horiz) {
+			const mainAxis = prevPoint.horiz ? 'x' : 'y',
+			      crosAxis = prevPoint.horiz ? 'y' : 'x';
+			let nextMain = nextPoint[mainAxis];
+			for (let j=i; nextMain===undefined; ++j) nextMain = anchors[j][mainAxis];
+			nextPoint = {
+				[mainAxis] : (prevPoint[mainAxis]+nextMain)/2,
+				[crosAxis] : prevPoint[crosAxis],
+				horiz      : !prevPoint.horiz
+			};
+			// Since we generated a new anchor, retry the next real anchor next loop
+			i--;
+		} else {
+			if (prevPoint.horiz) nextPoint.y = prevPoint.y;
+			else                 nextPoint.x = prevPoint.x;
+		}
+		pts.push(nextPoint);
+		prevPoint.distanceToNext = Math.hypot(nextPoint.x-prevPoint.x, nextPoint.y-prevPoint.y);
+		prevPoint = nextPoint;
+	}
+	nextPoint = anchors[anchors.length-1];
+	prevPoint.distanceToNext = Math.hypot(nextPoint.x-prevPoint.x, nextPoint.y-prevPoint.y);
+	pts.push(nextPoint);
+
+	// Crawl along the point triplets, calculating curves
+	let lastCmd = {c:'M', x:pts[0].x, y:pts[0].y}
+	const path = [lastCmd];
+	for (let i=1; i<pts.length-1; ++i) {
+		const [a,b,c] = [pts[i-1], pts[i], pts[i+1]];
+		const radius = Math.min(a.distanceToNext/2, b.distanceToNext/2, maxRadius);
+
+		let x=a.horiz ? (a.x<b.x ? b.x-radius : b.x+radius) : a.x;
+		let y=a.horiz ? a.y : (a.y<b.y ? b.y-radius : b.y+radius);
+		if (x!==lastCmd.x || y!==lastCmd.y) {
+			lastCmd = {c:'L', x:x, y:y}
+			path.push(lastCmd);
+		}
+
+		x = b.x + (b.horiz ? (c.x>b.x ? radius : -radius) : 0);
+		y = b.y + (b.horiz ? 0 : (c.y>b.y ? radius : -radius));
+
+		if (x===lastCmd.x || y===lastCmd.y) lastCmd = {c:'L', x:x, y:y};
+		else                                lastCmd = {c:'A', x1:b.x, y1:b.y, x:x, y:y, r:radius};
+		path.push(lastCmd);
+	}
+	const last = pts[pts.length-1];
+	path.push({c:'L', x:last.x, y:last.y});
+
+	drawGuides(anchors);
+	drawCircles(path);
+	drawPath(path);
+	return path;
+}
+
+function drawCircles(path) {
+	const colors = 'red orange green blue purple'.split(/\s+/);
+	let colori = 0;
+
+	path.forEach((cmd,i) => {
+		ctx.beginPath();
+		ctx.ellipse(cmd.x || cmd.x2, cmd.y || cmd.y2, 8, 8, 0, 0, Math.PI*2);
+		ctx.strokeStyle = colors[(colori++) % colors.length];
+		ctx.lineWidth = 2;
+		ctx.stroke();
+	});
+}
+
+function drawGuides(anchors) {
+	ctx.beginPath();
+	for (const wayline of anchors) {
+		if (wayline.horiz) {
+			ctx.moveTo(0,wayline.y);
+			ctx.lineTo(can.width,wayline.y);
+		} else {
+			ctx.moveTo(wayline.x,0);
+			ctx.lineTo(wayline.x,can.height);
+		}
+	}
+	ctx.lineCap = 'round';
+	ctx.setLineDash([2,10]);
+	ctx.strokeStyle='rgba(0,0,0,0.5)';
+	ctx.lineWidth = 0.5;
+	ctx.stroke();
+
+	[anchors[0], anchors[anchors.length-1]].forEach(pt => {
+		ctx.beginPath();
+		ctx.ellipse(pt.x, pt.y, 4, 4, 0, 0, Math.PI*2);
+		ctx.fill();
+
+		ctx.beginPath();
+		if (pt.horiz) {
+			ctx.moveTo(pt.x-20, pt.y);
+			ctx.lineTo(pt.x+20, pt.y);
+		} else {
+			ctx.moveTo(pt.x, pt.y-20);
+			ctx.lineTo(pt.x, pt.y+20);
+		}
+		ctx.strokeStyle='black';
+		ctx.setLineDash([]);
+		ctx.lineWidth = 2;
+		ctx.stroke();
+	});
+}
+
+function drawPath(path) {
+	ctx.beginPath();
+	path.forEach( cmd => {
+		switch (cmd.c) {
+			case 'M': ctx.moveTo(cmd.x, cmd.y); break;
+			case 'L': ctx.lineTo(cmd.x, cmd.y); break;
+			case 'A': ctx.arcTo(cmd.x1, cmd.y1, cmd.x, cmd.y, cmd.r); break;
+		}
+	});
+	ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+	ctx.lineWidth = 4;
+	ctx.stroke();
+}
+
+window.onresize = () => {
+	can.width = can.offsetWidth;
+	can.height = can.offsetHeight;
+	ctx.setTransform(1,0,0,1,0,0);
+	redraw();
+}
+onresize();
+</script>
+</body></html>

@@ -127,7 +127,7 @@ const SCXMLState = Object.setPrototypeOf(
         // stateType: must be 'state', 'parallel', or 'history'
         // newId: (optional) string id of the state
         // Returns the new state.
-        addChild(stateType, newId=null){
+        addChild(stateType='state', newId=null){
             const doc = this.ownerDocument;
             const child = wrapNode(doc.createElementNS(SVGNS, stateType || 'state'));
             child.id = doc.uniqueId(newId || this.id);
@@ -198,6 +198,17 @@ const SCXMLState = Object.setPrototypeOf(
             get()
             {
                 return this.querySelectorAll(':scope > transition');
+            }
+        },
+
+        // Array of all transitions targeting this state
+        // Mutating this array will not affect the document; use state.addTransition() or transition.delete() for that
+        incomingTransitions:{
+            get()
+            {
+                if (!this.id) return [];
+                const re = new RegExp(`(?:^|\s)${this.id}(?:\s|$)`);
+                return this.ownerDocument.transitions.filter(t => re.test(t.targetId));
             }
         },
 
@@ -350,7 +361,7 @@ const SCXMLTransition = Object.setPrototypeOf(
         source:{
             get()
             {
-                return this.parent;
+                return this.parentNode;
             },
             set(state){
                 if (state && state.appendChild)
@@ -424,7 +435,16 @@ const SCXMLTransition = Object.setPrototypeOf(
                     this.removeAttribute('type');
                 }
             }
-        }
+        },
+
+        // Array of all script blocks for this transition
+        // Mutating this array will not affect the document; use transition.addScript() or script.delete() for that
+        scripts:{
+            get()
+            {
+                return this.querySelectorAll(':scope > script');
+            }
+        },
     }),
     Element.prototype
 );
@@ -496,8 +516,4 @@ function wrapNode(el)
     if (proto) Object.setPrototypeOf(el, proto);
     for (const c of el.children) wrapNode(c);
     return el;
-}
-
-function toHex255(n) {
-    return (Math.round(n)%256).toString(16).padStart(2,'0');
 }

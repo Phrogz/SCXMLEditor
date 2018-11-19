@@ -4,15 +4,14 @@ const SSE = {};
 const nvNS  = 'http://nvidia.com/drive/architect';
 const svgNS = 'http://www.w3.org/2000/svg';
 
-SSE.Canvas = function(svg, scxmlDoc)
-{
+SSE.Canvas = function(svg, scxmlDoc) {
 	this.svg         = svg;
 	this.transCombos = {};
 	this.selection   = [];
 	this.g = {
 		shadows : make('g', {_dad:svg, id:'shadows'}),
 		content : make('g', {_dad:svg, id:'content'}),
-		heads   : make('g', {_dad:svg, id:'heads'}),
+		transitions : make('g', {_dad:svg, id:'transitions'}),
 	};
 	this.gridSize = 10;
 	this.gridActive = true;
@@ -21,13 +20,15 @@ SSE.Canvas = function(svg, scxmlDoc)
 	if (scxmlDoc) this.useSCXML(scxmlDoc);
 }
 
-SSE.Canvas.prototype.useSCXML = function(scxmlDoc)
-{
+SSE.Canvas.prototype.maxRadius = 60;
+
+SSE.Canvas.prototype.useSCXML = function(scxmlDoc) {
 	this.scxmlDoc = scxmlDoc;
 	this.observer = new MutationObserver(this.onDocChange.bind(this));
 	this.observer.observe(scxmlDoc.root, {childList:true, attributes:true, subtree:true});
 
 	Object.setPrototypeOf(SSE.State, Object.getPrototypeOf(scxmlDoc.root));
+	Object.setPrototypeOf(SSE.Transition, Object.getPrototypeOf(scxmlDoc.transitions[0]));
 
 	// Turn off the grid when setting the initial positions of items
 	this.gridActive = false;
@@ -36,31 +37,35 @@ SSE.Canvas.prototype.useSCXML = function(scxmlDoc)
 	this.gridActive = true;
 };
 
-SSE.Canvas.prototype.addState = function(state)
-{
+SSE.Canvas.prototype.addState = function(state) {
 	// The root SCXML element does not get displayed visually
 	if (state===this.scxmlDoc.root) return;
 
 	Object.setPrototypeOf(state, SSE.State);
 
 	const ego = state._sse = {
-		canvas:   this,
-		shadow:   make('rect', {rx:10, ry:10}),
-		main:     make('g', {transform:'translate(0,0)', 'class':'state'}),
-		incoming: [],
-		outgoing: [],
+		canvas   : this,
+		shadow   : make('rect', {_dad:this.g.shadows, rx:state.cornerRadius, ry:state.cornerRadius}),
+		main     : make('g', {_dad:this.g.content, transform:'translate(0,0)', 'class':'state'}),
 	};
-	if (state.states.length) ego.main.classList.add('parent');
+
 	ego.tx = ego.main.transform.baseVal.getItem(0);
-	ego.rect  = make('rect', {_dad:ego.main, rx:10, ry:10});
+	ego.rect  = make('rect', {_dad:ego.main, rx:state.cornerRadius, ry:state.cornerRadius});
 	ego.label = make('text', {_dad:ego.main, _text:state.id});
+	ego.enter = make('path', {_dad:ego.main, d:'M0,0', 'class':'enter'});
+	ego.exit  = make('path', {_dad:ego.main, d:'M0,0', 'class':'exit'});
 	this.makeDraggable(ego.main, state);
 
-	this.g.shadows.appendChild(ego.shadow);
-	this.g.content.appendChild(ego.main);
+	if (!state.getAttributeNS(nvNS,'xywh')) {
+		const [x,y,w,h] = state.parentNode.xywh;
+		state.xywh = [x+this.gridSize*2, y+this.gridSize*3, 120, 40];
+	}
 
+	// Force generation of default values and updating from DOM
 	state.xywh = state.xywh;
-	// state.updateAttribute('rgba');
+	state.rgb = state.rgb;
+	state.checkScripts();
+	state.checkChildren();
 
 	ego.main.addEventListener('mousedown', evt=>{
 		evt.stopPropagation();
@@ -68,30 +73,25 @@ SSE.Canvas.prototype.addState = function(state)
 	}, false);
 };
 
-SSE.Canvas.prototype.addTransition = function(start,end,events)
-{
-	// var t = new SSE.Transition(this,start,end,events);
-	// this.g.transitions.appendChild(t.main);
-	// this.g.heads.appendChild(t._heads);
-	// this.transitions.push(t);
+SSE.Canvas.prototype.addTransition = function(tran) {
+	Object.setPrototypeOf(tran, SSE.Transition);
+	const ego = tran._sse = {
+		canvas : this,
+		main   : make('g', {_dad:this.g.transitions, 'class':'transition'}),
+	};
+	ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
+	ego.path    = make('path', {_dad:ego.main, d:'M0,0', 'class':'transition'});
 
-	// if (!this.transCombos[start]) this.transCombos[start] = {};
-	// if (!this.transCombos[start][end]) this.transCombos[start][end] = [];
-	// this.transCombos[start][end].push(t);
+	tran.checkScripts();
+	tran.checkCondition();
 
-	// var me = this;
-	// t.main.addEventListener('mousedown',function(evt){
-	// 	evt.stopPropagation();
-	// 	me.select(t);
-	// },false);
+	ego.main.addEventListener('mousedown', evt=>{
+		evt.stopPropagation();
+		this.select(tran);
+	}, false);
 
-	// return t;
+	tran.reroute();
 };
-
-SSE.Canvas.prototype.transitionsBetween = function(start,end){
-	if (!this.transCombos[start]) return [];
-	return this.transCombos[start][end] || [];
-}
 
 SSE.Canvas.prototype.makeDraggable = function(el, obj){
 	el.addEventListener('mousedown',function(evt){
@@ -135,14 +135,47 @@ SSE.Canvas.prototype.onDocChange = function(mutationList){
 		switch(m.type) {
 			case 'childList':
 				m.addedNodes.forEach(n => {
-					console.log('TODO: maybe create a new visual node for', n);
-				});
-				m.removedNodes.forEach(n => {
-					if (this.docNodeToSSE.has(n)) {
-						console.log('TODO: remove SSE node for', n);
+					switch(n.nodeName) {
+						case 'state':
+						case 'parallel':
+						case 'history':
+							this.addState(n);
+							n.parentNode.checkChildren();
+						break;
+
+						case 'transition':
+							this.addTransition(n);
+						break;
+
+						case 'script':
+							const parent = n.parentNode;
+							switch (parent.nodeName) {
+								case 'transition':
+									parent.checkScripts();
+								break;
+								case 'onentry':
+								case 'onexit':
+									parent.parentNode.checkScripts();
+								break;
+							}
+						break;
+
+						default:
+							console.log('Dunno what to do with added node', n);
 					}
 				});
+
+				let anyScripts = false;
+				let anyStates  = false;
+				m.removedNodes.forEach(n => {
+					if (n.deleteGraphics) n.deleteGraphics();
+					anyScripts |= n.nodeName==='script';
+					anyStates  |= /^(?:state|parallel|history)$/.test(n.nodeName);
+				});
+				if (anyScripts) this.scxmlDoc.states.forEach(ƒ('checkScripts'));
+				if (anyStates)  this.scxmlDoc.states.forEach(ƒ('checkChildren'));
 			break;
+
 			case 'attributes':
 				if (m.target.updateAttribute) m.target.updateAttribute(m.attributeNamespace, m.attributeName);
 			break;
@@ -154,56 +187,95 @@ SSE.Canvas.prototype.onDocChange = function(mutationList){
 // ****************************************************************************
 // ****************************************************************************
 
-
 SSE.State = Object.defineProperties({
+	cornerRadius:10,
+
 	startDragging(sandbox){
 		// Re-order this state to the top
-		// TODO: do this to all its children, too
 		sandbox.starts = new Map([this, ...this.descendants].map(n => [n, n.xy]));
 		for (const [n,xy] of sandbox.starts) {
 			n._sse.main.parentNode.appendChild(n._sse.main);
 		}
 	},
 
-	handleDrag(dx, dy, sandbox){
-		for (const [n,xy] of sandbox.starts) n.xy = [xy[0]+dx, xy[1]+dy];
+	handleDrag(dx, dy, sandbox) {
+		for (const [s,xy] of sandbox.starts) s.xy = [xy[0]+dx, xy[1]+dy];
+		for (const [s,xy] of sandbox.starts) {
+			s.transitions.forEach(ƒ('reroute'));
+			s.incomingTransitions.forEach(ƒ('reroute'));
+		}
 	},
 
-	select(){
+	select() {
 		this._sse.main.classList.add('selected');
 	},
 
-	deselect(){
+	deselect() {
 		this._sse.main.classList.remove('selected');
+	},
+
+	deleteGraphics() {
+		this._sse.shadow.remove();
+		this._sse.main.remove();
+		delete this._sse;
 	},
 
 	updateAttribute(attrNS, attrName){
 		const val = this.getAttributeNS(attrNS, attrName);
+		const ego = this._sse;
 		switch(attrName){
 			case 'xywh':
-				const ego = this._sse;
+				const o = 4;
+				const r = this.cornerRadius-o;
 				const [x,y,w,h] = val.split(/\s+/).map(Number);
 				ego.tx.setTranslate(x, y);
 				setAttributes(ego.shadow, {x:x, y:y});
-				ego.incoming.forEach(ƒ('pickPath'));
-				ego.outgoing.forEach(ƒ('pickPath'));
-
+				ego.enter.setAttribute('d', `M${o+r},${o} A${r},${r},0,0,0,${o},${o+r} L${o},${h-o-r} A${r},${r},0,0,0,${o+r},${h-o}`);
+				ego.exit.setAttribute('d', `M${w-o-r},${o} A${r},${r},0,0,1,${w-o},${o+r} L${w-o},${h-o-r} A${r},${r},0,0,1,${w-o-r},${h-o}`);
 				setAttributes(ego.rect,   {width:w, height:h});
 				setAttributes(ego.shadow, {width:w, height:h});
-				const labelAtTop = this.states.length>0;
-				const top = labelAtTop ? 15 : h/2;
-				setAttributes(ego.label,  {x:w/2, y:top});
-				ego.incoming.forEach(ƒ('pickPath'));
-				ego.outgoing.forEach(ƒ('pickPath'));
 
-				this.updateContainment();
+				this.transitions.forEach(ƒ('reroute'));
+				this.incomingTransitions.forEach(ƒ('reroute'));
+				this.updateLabelPosition();
+				this.checkContainment();
+			break;
+
+			case 'rgb':
+				this._sse.rect.style.fill = 'rgb('+this.rgb.join()+')';
+			break;
+
+			case 'id':
+				ego.label.textContent = val;
 			break;
 		}
 	},
 
-	updateContainment(){
-		this._sse.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
-		this.states.forEach(ƒ('updateContainment'));
+	checkContainment() {
+		this._sse.main.classList.toggle('containmentError', !this.containedWithin(this.parentNode));
+		this.states.forEach(ƒ('checkContainment'));
+	},
+
+	checkScripts() {
+		this._sse.main.classList.toggle('enter', this.enterScripts.length);
+		this._sse.main.classList.toggle('exit',  this.exitScripts.length);
+	},
+
+	checkChildren() {
+		this._sse.main.classList.toggle('parent', this.states.length);
+		this.updateLabelPosition()
+	},
+
+	updateLabelPosition() {
+		const [x,y,w,h] = this.xywh;
+		const top = this.states.length>0 ? 15 : h/2;
+		setAttributes(this._sse.label, {x:w/2, y:top});
+	},
+
+	containedWithin(s2) {
+		if (s2.isSCXML) return true;
+		const d1=this.xywh, d2=s2.xywh;
+		return (d1[0]>=d2[0] && d1[1]>=d2[1] && (d1[0]+d1[2])<=(d2[0]+d2[2]) && (d1[1]+d1[3])<=(d2[1]+d2[3]));
 	},
 },{
 	x: {
@@ -232,192 +304,255 @@ SSE.State = Object.defineProperties({
 	},
 	xywh: {
 		get(){
-            const xywh=this.getAttributeNS(nvNS, 'xywh');
-            return xywh ? xywh.split(/\s+/).map(Number) : [0,0,100,60];
+            let xywh=this.getAttributeNS(nvNS, 'xywh');
+            if (xywh) return xywh.split(/\s+/).map(Number);
+            else return this.isSCXML ? [0,0,2000,1000] : [0,0,120,40];
 		},
 		set(xywh){ this.setAttributeNS(nvNS, 'xywh', xywh.join(' ')) }
 	},
 
-	containedWithinParent:{
-		get()
-		{
-			if (this.parent.isSCXML) return true;
-			const dad=this.parent.xywh, ego=this.xywh;
-			return (ego[0]>=dad[0] && ego[1]>=dad[1] &&
-			        (ego[0]+ego[2])<=(dad[0]+dad[2]) &&
-			        (ego[1]+ego[3])<=(dad[1]+dad[3]));
-		}
-	},
-
 	r: {
-		get(){ return this.rgba[0] },
-		set(r){ const rgba=this.rgba; rgba[0]=r; this.rgba=rgba }
+		get(){ return this.rgb[0] },
+		set(r){ const rgb=this.rgb; rgb[0]=r; this.rgb=rgb }
 	},
 	g: {
-		get(){ return this.rgba[1] },
-		set(g){ const rgba=this.rgba; rgba[1]=g; this.rgba=rgba }
+		get(){ return this.rgb[1] },
+		set(g){ const rgb=this.rgb; rgb[1]=g; this.rgb=rgb }
 	},
 	b: {
-		get(){ return this.rgba[2] },
-		set(b){ const rgba=this.rgba; rgba[2]=b; this.rgba=rgba }
+		get(){ return this.rgb[2] },
+		set(b){ const rgb=this.rgb; rgb[2]=b; this.rgb=rgb }
 	},
-	a: {
-		get(){ return this.rgba[3] },
-		set(a){ const rgba=this.rgba; rgba[3]=a; this.rgba=rgba }
-	},
-	rgba: {
+	rgb: {
 		get(){
-			const rgba = this.getAttributeNS(nvNS, 'rgba') || 'FFFFFF80';
-			return rgba.match(/[\da-f]{2}/gi).map(s=>parseInt(s,16));
+			const rgb = this.getAttributeNS(nvNS, 'rgb') || 'FFFFFF';
+			return rgb.match(/[\da-f]{2}/gi).map(s=>parseInt(s,16));
 		},
-		set(rgba){ this.setAttributeNS(nvNS, 'rgba', array.map(toHex255).join('')) }
+		set(rgb){ this.setAttributeNS(nvNS, 'rgb', rgb.map(toHex255).join('')) }
 	},
 });
 
-// SSE.State.prototype.xy = function(x, y)
-// {
-// 	const xywh = this.node.xywh;
-// 	this._x = x;
-// 	this._y = y;
-// 	if (this.canvas.gridActive)
-// 	{
-// 		[x,y] = [x,y].map(n => Math.round(n/this.canvas.gridSize)*this.canvas.gridSize);
-// 	}
-// 	xywh[0] = x;
-// 	xywh[1] = y;
-// 	this._tx.setTranslate(x, y);
-// 	setAttributes(this.shadow, {x:x, y:y});
-// 	this.incoming.forEach(ƒ('pickPath'));
-// 	this.outgoing.forEach(ƒ('pickPath'));
-// 	this.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
-// }
-
-// SSE.State.prototype.wh = function(w, h)
-// {
-// 	const xywh = this.node.xywh;
-// 	if (this.canvas.gridActive)
-// 	{
-// 		[w,h] = [w,h].map(n => Math.round(n/this.canvas.gridSize)*this.canvas.gridSize);
-// 	}
-// 	xywh[2] = w;
-// 	xywh[3] = h;
-// 	setAttributes(this.rect,   {width:w, height:h});
-// 	setAttributes(this.shadow, {width:w, height:h});
-// 	const labelAtTop = this.node.states.length>0;
-// 	const y = labelAtTop ? 15 : h/2;
-// 	setAttributes(this.label,  {x:w/2, y:y});
-// 	this.incoming.forEach(ƒ('pickPath'));
-// 	this.outgoing.forEach(ƒ('pickPath'));
-// 	this.main.classList[this.containedWithinParent ? 'remove' : 'add']('containmentError');
-// }
-
-// SSE.State.prototype
-
-        // Array of position and size of this state, in global document coordinates
-        // Mutating this array will not affect the document; you must assign an array to this property
-        // xywh:{
-        //     get()
-        //     {
-        //         const xywh = this.getAttributeNS(NVNS, 'xywh');
-        //         return xywh ? xywh.split(/\s+/).map(Number) : [0,0,100,60];
-        //     },
-        //     set(array)
-        //     {
-        //
-        //     },
-        // },
-
-        // Array of color values for this state, all in the range [0,255]
-        // Mutating this array will not affect the document; you must assign an array to this property
-        // rgba:{
-        //     get()
-        //     {
-        //         const rgba = this.getAttributeNS(NVNS, 'rgba') || 'FFFFFF80';
-        //         return rgba.match(/[\da-f]{2}/gi).map(s=>parseInt(s,16));
-        //     },
-        //     set(array)
-        //     {
-        //         this.setAttributeNS(NVNS, 'rgba', array.map(toHex255).join(''));
-        //     },
-        // },
-
-
-
 // ****************************************************************************
 // ****************************************************************************
 // ****************************************************************************
 
-/*
-SSE.Transition = function(canvas,start,end,events){
-	this.canvas = canvas;
-	this.start  = start;
-	this.end    = end;
-	this.main   = };
-SSE.Transition.prototype.pickPath = function(){
-	var s0=this.start, s1=this.end;
-	var pad = 25;
-	var w=SSE.State.shape.width, h=SSE.State.shape.height;
-	var xQuad = (s0.x-pad > s1.x+w) ? -1 : (s1.x-pad > s0.x+w) ? 1 : 0;
-	var yQuad = (s0.y-pad > s1.y+h) ? -1 : (s1.y-pad > s0.y+h) ? 1 : 0;
-	this.s0Vert = this.s1Vert = true;
-	switch(yQuad){
-		case -1:
-			this._x1=s0.x+w/2;
-			this._y1=s0.y;
-			this._x2=s1.x+w/2;
-			this._y2=s1.y+h;
-		break;
-		case 0:
-			this.s0Vert = this.s1Vert = false;
-			this._x1 = (xQuad<1) ? s0.x : s0.x+w;
-			this._y1 = s0.y+h/2;
-			this._x2 = (xQuad<1) ? s1.x+w : s1.x;
-			this._y2 = s1.y+h/2;
-		break;
-		case 1:
-			this._x1=s0.x+w/2;
-			this._y1=s0.y+h;
-			this._x2=s1.x+w/2;
-			this._y2=s1.y;
-		break;
-	}
-	this.mid = [
-		this._x1+(this._x2-this._x1)/2,
-		this._y1+(this._y2-this._y1)/2
-	];
-	this.redraw();
-};
-SSE.Transition.prototype.redraw = function(){
-	var pts = [];
-	pts.push([this._x1,this._y1]);
-	if (this.s0Vert==this.s1Vert){
-		pts.push([this._x1+(this._x2-this._x1)/2,this._y1+(this._y2-this._y1)/2]);
-	}
-	pts.push([this._x2,this._y2]);
-	var commands = ['M'+pts[0].join()];
-	for (var i=0,len=pts.length-1,vert=this.s0Vert;i<len;++i,vert=!vert){
-		var p0=pts[i], p1=pts[i+1], dx=p1[0]-p0[0], dy=p1[1]-p0[1];
-		var d = Math.min(Math.abs(dx),Math.abs(dy)) / tightness;
-		tx  = dx<0 ? -d : d;
-		ty  = dy<0 ? -d : d;
-		if (vert ? dy<0 : dx<0) d=-d;
-		// commands.push( vert ? 'V'+p1[1]+'H'+p1[0] : 'H'+p1[0]+'V'+p1[1] );
-		if (vert) commands.push( 'v'+(dy-ty)+('a'+[d,d,0,0,dx*dy>0?0:1,tx,ty].join())+'H'+p1[0] );
-		else      commands.push( 'h'+(dx-tx)+('a'+[d,d,0,0,dx*dy>0?1:0,tx,ty].join())+'V'+p1[1] );
-	}
-	this._path.setAttribute('d',commands.join(' '));
-	this._heads.setAttribute('d',commands.join(' '));
-};
+SSE.Transition = Object.defineProperties({
+	reroute(){
+		const pts = [];
+		pts.push(this.sourceXY);
+		if (this.targetId) pts.push(this.targetXY);
+		const path = svgPathFromAnchors(this.anchors, this.radius);
+		this._sse.path.setAttribute('d', path);
+		this._sse.catcher.setAttribute('d', path);
+	},
 
-SSE.Transition.prototype.select = function(){
-	this.main.parentNode.appendChild(this.main);
-	SSE.addClass(this.main,'selected');
-};
+	select() {
+		const main = this._sse.main;
+		main.parentNode.appendChild(main);
+		main.classList.add('selected');
+	},
 
-SSE.Transition.prototype.deselect = function(){
-	SSE.removeClass(this.main,'selected');
-};
-*/
+	deselect() {
+		this._sse.main.classList.remove('selected');
+	},
+
+	deleteGraphics() {
+		this._sse.main.remove();
+		delete this._sse;
+	},
+
+	bestAnchors() {
+		const source=this.source, target=this.target;
+		const [sx,sy,sw,sh] = source.xywh;
+		if (!target) return [anchorOnState(source, 'S', sw/2)];
+		const [tx,ty,tw,th] = target.xywh;
+		const [sr,sb,tr,tb] = [sx+sw, sy+sh, tx+tw, ty+th];
+		if (source.containedWithin(target)) {
+			return [
+				anchorOnState(source, 'E', sh/2, true),
+				anchorOnState(target, 'E', th/2, false),
+			]
+		} else if (target.containedWithin(source)) {
+			return [
+				anchorOnState(source, 'W', sh/2, true),
+				anchorOnState(target, 'W', th/2, false),
+			]
+		} else {
+			const gapN = sy-tb;
+			const gapS = ty-sb;
+			const gapE = tx-sr;
+			const gapW = sx-tr;
+			const biggest = Math.max(gapE, gapS, gapW, gapN);
+			const avgY = (Math.max(sy,ty)+Math.min(sb,tb))/2;
+			const avgX = (Math.max(sx,tx)+Math.min(sr,tr))/2;
+			const result = [];
+			if (biggest===gapE) {
+				result.push(anchorOnState(source, 'E', avgY-sy-5, true));
+				if      (avgY<ty) result.push(anchorOnState(target, 'N', 0, false));
+				else if (avgY>tb) result.push(anchorOnState(target, 'S', 0, false));
+				else                  result.push(anchorOnState(target, 'W', avgY-ty-5, false));
+			} else if (biggest===gapS) {
+				result.push(anchorOnState(source, 'S', avgX-sx-5, true));
+				if      (avgX<tx) result.push(anchorOnState(target, 'W', 0, false));
+				else if (avgX>tr) result.push(anchorOnState(target, 'E', 0, false));
+				else                  result.push(anchorOnState(target, 'N', avgX-tx-5, false));
+			} else if (biggest===gapW) {
+				result.push(anchorOnState(source, 'W', avgY-sy+5, true));
+				if      (avgY<ty) result.push(anchorOnState(target, 'N', tw, false));
+				else if (avgY>tb) result.push(anchorOnState(target, 'S', tw, false));
+				else                  result.push(anchorOnState(target, 'E', avgY-ty+5, false));
+			} else if (biggest===gapN) {
+				result.push(anchorOnState(source, 'N', avgX-sx+5, true));
+				if      (avgX<tx) result.push(anchorOnState(target, 'W', th, false));
+				else if (avgX>tr) result.push(anchorOnState(target, 'E', th, false));
+				else                  result.push(anchorOnState(target, 'S', avgX-tx+5, false));
+			}
+			return result;
+		}
+	},
+
+	checkScripts() {
+		this._sse.path.classList.toggle('actions', this.scripts.length);
+	},
+
+	checkCondition() {
+		this._sse.path.classList.toggle('conditional', this.condition);
+	},
+},{
+	radius:{
+		get(){
+			// This (intentionally) prevents completely square corners
+			return this.getAttributeNS(nvNS, 'radius')*1 || this._sse.canvas.maxRadius || null;
+		}
+	},
+
+	anchors:{
+		get(){
+			const pts = this.getAttributeNS(nvNS, 'pts');
+			if (!pts) return this.bestAnchors();
+			const anchors = [],
+			      regex   = /([NSEWXY])\s*(\S+)/g;
+			let match;
+			while (match=regex.exec(pts)) {
+				const [,direction,offset] = match;
+				switch (direction) {
+					case 'X': anchors.push({x:offset*1, horiz:false}); break;
+					case 'Y': anchors.push({y:offset*1, horiz:true }); break;
+					default:
+						const state = anchors.length ? this.target : this.parentNode;
+						anchors.push(anchorOnState(state, direction, offset, state===this.parentNode));
+				}
+			}
+			return anchors;
+		}
+	},
+});
+
+// state: a state node
+// side: 'N', 'S', 'E', 'W'
+// offset: a distance along that edge
+function anchorOnState(state, side, offset, startState) {
+	if (!state) return;
+	const rad = state.cornerRadius;
+	let [x,y,w,h] = state.xywh;
+	const [l,t,r,b] = [x+rad, y+rad, x+w-rad, y+h-rad];
+	const anchor = {x, y, horiz:true};
+	if (startState!==undefined) anchor.start=startState;
+	if (side==='N' || side==='S') {
+		anchor.horiz = false;
+		anchor.x += offset;
+		if (anchor.x<l) anchor.x=l;
+		else if (anchor.x>r) anchor.x=r;
+		if (side==='S') anchor.y+=h;
+	}
+	if (side==='W' || side==='E') {
+		anchor.y += offset;
+		if (anchor.y<t) anchor.y=t;
+		else if (anchor.y>b) anchor.y=b;
+		if (side==='E') anchor.x+=w;
+	}
+	return anchor;
+}
+
+function svgPathFromAnchors(anchors, maxRadius=Infinity) {
+	if (anchors.length===1) {
+		const [x,y] = [anchors[0].x, anchors[0].y];
+		return `M${x-0.01},${y} A${SSE.State.cornerRadius},${SSE.State.cornerRadius},0,1,0${x+0.01},${y}`;
+	}
+	if (!maxRadius) maxRadius = Infinity;
+
+	// Calculate intersection points
+	let prevPoint = anchors[0], nextPoint;
+	const pts = [prevPoint];
+	for (let i=1; i<anchors.length; ++i) {
+		nextPoint = Object.assign({}, anchors[i]);
+		// Interject an anchor of opposite orientation between two sequential anchors with the same orientation
+		if (nextPoint.horiz===prevPoint.horiz) {
+			const mainAxis = prevPoint.horiz ? 'x' : 'y',
+			      crosAxis = prevPoint.horiz ? 'y' : 'x';
+			let nextMain = nextPoint[mainAxis];
+			for (let j=i; nextMain===undefined; ++j) nextMain = anchors[j][mainAxis];
+			nextPoint = {
+				[mainAxis] : (prevPoint[mainAxis]+nextMain)/2,
+				[crosAxis] : prevPoint[crosAxis],
+				horiz      : !prevPoint.horiz
+			};
+			// Since we generated a new anchor, retry the next real anchor next loop
+			i--;
+		} else {
+			if (prevPoint.horiz) nextPoint.y = prevPoint.y;
+			else                 nextPoint.x = prevPoint.x;
+		}
+		pts.push(nextPoint);
+		prevPoint.distanceToNext = Math.hypot(nextPoint.x-prevPoint.x, nextPoint.y-prevPoint.y);
+		prevPoint = nextPoint;
+	}
+	nextPoint = anchors[anchors.length-1];
+	prevPoint.distanceToNext = Math.hypot(nextPoint.x-prevPoint.x, nextPoint.y-prevPoint.y);
+	pts.push(nextPoint);
+
+	// Crawl along the point triplets, calculating curves
+	let lastCmd = {c:'M', x:pts[0].x, y:pts[0].y}
+	let cmds = [lastCmd];
+	for (let i=1; i<pts.length-1; ++i) {
+		const [a,b,c] = [pts[i-1], pts[i], pts[i+1]];
+		const radius = Math.min(a.distanceToNext/2, b.distanceToNext/2, maxRadius);
+
+		let x=a.horiz ? (a.x<b.x ? b.x-radius : b.x+radius) : a.x;
+		let y=a.horiz ? a.y : (a.y<b.y ? b.y-radius : b.y+radius);
+		if (x!==lastCmd.x || y!==lastCmd.y) {
+			lastCmd = {c:'L', x:x, y:y}
+			cmds.push(lastCmd);
+		}
+
+		x = b.x + (b.horiz ? (c.x>b.x ? radius : -radius) : 0);
+		y = b.y + (b.horiz ? 0 : (c.y>b.y ? radius : -radius));
+
+		if (x===lastCmd.x || y===lastCmd.y) lastCmd = {c:'L', x:x, y:y};
+		else                                lastCmd = {c:'A', x1:b.x, y1:b.y, x:x, y:y, r:radius};
+		cmds.push(lastCmd);
+	}
+	const last = pts[pts.length-1];
+	cmds.push({c:'L', x:last.x, y:last.y});
+
+	let x,y;
+	return cmds.map(cmd => {
+		let result;
+		switch (cmd.c) {
+			case 'M':
+			case 'L':
+				result = `${cmd.c}${cmd.x},${cmd.y}`;
+			break;
+			case 'A':
+				const angle = (cmd.y1-y)*(cmd.x-cmd.x1)-(cmd.y-cmd.y1)*(cmd.x1-x);
+				result = `A${cmd.r},${cmd.r},0,0,${angle<0?1:0},${cmd.x},${cmd.y}`;
+			break;
+		}
+		x = cmd.x;
+		y = cmd.y;
+		return result;
+	}).join('');
+}
 
 function ƒ(name){
 	let v;
@@ -448,6 +583,10 @@ function make(name, opts={}){
 		}
 	}
 	return el;
+}
+
+function toHex255(n) {
+    return (Math.round(n)%256).toString(16).padStart(2,'0');
 }
 
 export default SSE.Canvas;
