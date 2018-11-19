@@ -11,7 +11,7 @@
 				app.views.eula:setVisible(false)
 			</script>
 		</onentry>
-		<state id="UpToDate" nv:rgb="ffffff" nv:xywh="30 60 120 40">
+		<state id="UpToDate" nv:rgb="ffffff" nv:xywh="30 60 160 40">
 			<onentry>
 				<script>
 					app.views.launcher.buttons.ota.hidden = true
@@ -19,7 +19,7 @@
 			</onentry>
 			<transition event="ota.available" target="UpdateAvailable" type="internal"/>
 		</state>
-		<state id="UpdateAvailable" nv:rgb="ffffff" nv:xywh="240 60 120 40">
+		<state id="UpdateAvailable" nv:rgb="ffffff" nv:xywh="240 60 160 40">
 			<onentry>
 				<script>
 					app.views.launcher.buttons.ota.hidden = false
@@ -56,7 +56,7 @@
 				app.views.park:setVisible(true)
 			</script>
 		</onentry>
-		<transition event="button.cancel" target="UpdateAvailable" type="internal"/>
+		<transition event="button.cancel" target="UpdateAvailable" type="internal" nv:pts="N330 S110"/>
 		<transition cond="true" event="button.confirm" target="ConfirmOTA" type="internal"/>
 		<onexit>
 			<script>
@@ -93,7 +93,7 @@
 			<transition event="button.donotaccept" target="EULARejected" type="internal" nv:radius="20"/>
 			<transition event="button.accept" target="UpdateInProcess" type="internal" nv:pts="E0 W100"/>
 		</state>
-		<transition event="button.cancel" target="UpdateAvailable" type="internal"/>
+		<transition event="button.cancel" target="UpdateAvailable" type="internal" nv:pts="N340 S120"/>
 		<onexit>
 			<script>
 				app.views.eula:setVisible(false)

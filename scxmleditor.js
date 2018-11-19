@@ -4,7 +4,7 @@ const SSE = {};
 const nvNS  = 'http://nvidia.com/drive/architect';
 const svgNS = 'http://www.w3.org/2000/svg';
 
-SSE.Canvas = function(svg, scxmlDoc) {
+SSE.Editor = function(svg, scxmlDoc) {
     this.svg         = svg;
     this.transCombos = {};
     this.selection   = [];
@@ -15,12 +15,12 @@ SSE.Canvas = function(svg, scxmlDoc) {
     };
     this.gridSize = 10;
     this.gridActive = true;
-    document.body.addEventListener('mousedown', _=>this.select(), false);
+    document.body.addEventListener('mousedown', this.select.bind(this), false);
 
     if (scxmlDoc) this.useSCXML(scxmlDoc);
 }
 
-Object.defineProperties(SSE.Canvas.prototype, {
+Object.defineProperties(SSE.Editor.prototype, {
     maxRadius:{
         get()
         {
@@ -37,9 +37,7 @@ Object.defineProperties(SSE.Canvas.prototype, {
     }
 });
 
-SSE.Canvas.prototype.maxRadius = 60;
-
-SSE.Canvas.prototype.useSCXML = function(scxmlDoc) {
+SSE.Editor.prototype.useSCXML = function(scxmlDoc) {
     this.scxmlDoc = scxmlDoc;
     this.observer = new MutationObserver(this.onDocChange.bind(this));
     this.observer.observe(scxmlDoc.root, {childList:true, attributes:true, subtree:true});
@@ -54,14 +52,14 @@ SSE.Canvas.prototype.useSCXML = function(scxmlDoc) {
     this.gridActive = true;
 };
 
-SSE.Canvas.prototype.addState = function(state) {
+SSE.Editor.prototype.addState = function(state) {
     // The root SCXML element does not get displayed visually
     if (state===this.scxmlDoc.root) return;
 
     Object.setPrototypeOf(state, SSE.State);
 
     const ego = state._sse = {
-        canvas   : this,
+        editor   : this,
         shadow   : make('rect', {_dad:this.g.shadows, rx:state.cornerRadius, ry:state.cornerRadius}),
         main     : make('g', {_dad:this.g.content, transform:'translate(0,0)', 'class':'state'}),
     };
@@ -86,14 +84,14 @@ SSE.Canvas.prototype.addState = function(state) {
 
     ego.main.addEventListener('mousedown', evt=>{
         evt.stopPropagation();
-        this.select(state);
+        this.select(evt, state);
     }, false);
 };
 
-SSE.Canvas.prototype.addTransition = function(tran) {
+SSE.Editor.prototype.addTransition = function(tran) {
     Object.setPrototypeOf(tran, SSE.Transition);
     const ego = tran._sse = {
-        canvas : this,
+        editor : this,
         main   : make('g', {_dad:this.g.transitions, 'class':'transition'}),
     };
     ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
@@ -104,13 +102,13 @@ SSE.Canvas.prototype.addTransition = function(tran) {
 
     ego.main.addEventListener('mousedown', evt=>{
         evt.stopPropagation();
-        this.select(tran);
+        this.select(evt, tran);
     }, false);
 
     tran.reroute();
 };
 
-SSE.Canvas.prototype.makeDraggable = function(el, obj){
+SSE.Editor.prototype.makeDraggable = function(el, obj){
     el.addEventListener('mousedown',function(evt){
         // TODO: Transform from screen to SVG space for viewBox'd content
 
@@ -130,16 +128,19 @@ SSE.Canvas.prototype.makeDraggable = function(el, obj){
     },false);
 }
 
-SSE.Canvas.prototype.select = function(item){
-    this.selection.forEach(i => i.deselect());
-    this.selection.length = 0;
-    if (item){
+SSE.Editor.prototype.select = function(evt, item){
+    if (!evt.shiftKey)
+    {
+        this.selection.forEach(i => i.deselect());
+        this.selection.length = 0;
+    }
+    if (item) {
         this.selection.push(item);
         item.select();
     }
 }
 
-SSE.Canvas.prototype.snap = function(n){
+SSE.Editor.prototype.snap = function(n){
     if (this.gridActive) {
         if (n.map) n=n.map(v=>Math.round(v/this.gridSize)*this.gridSize);
         else       n=Math.round(n/this.gridSize)*this.gridSize;
@@ -147,7 +148,7 @@ SSE.Canvas.prototype.snap = function(n){
     return n;
 }
 
-SSE.Canvas.prototype.onDocChange = function(mutationList){
+SSE.Editor.prototype.onDocChange = function(mutationList){
     mutationList.forEach(m => {
         switch(m.type) {
             case 'childList':
@@ -302,27 +303,27 @@ SSE.State = Object.defineProperties({
 },{
     x: {
         get(){ return this.xywh[0] },
-        set(x){ const xywh=this.xywh; xywh[0]=this._sse.canvas.snap(x); this.xywh=xywh }
+        set(x){ const xywh=this.xywh; xywh[0]=this._sse.editor.snap(x); this.xywh=xywh }
     },
     y: {
         get(){ return this.xywh[1] },
-        set(y){ const xywh=this.xywh; xywh[1]=this._sse.canvas.snap(y); this.xywh=xywh }
+        set(y){ const xywh=this.xywh; xywh[1]=this._sse.editor.snap(y); this.xywh=xywh }
     },
     w: {
         get(){ return this.xywh[2] },
-        set(w){ const xywh=this.xywh; xywh[2]=this._sse.canvas.snap(w); this.xywh=xywh }
+        set(w){ const xywh=this.xywh; xywh[2]=this._sse.editor.snap(w); this.xywh=xywh }
     },
     h: {
         get(){ return this.xywh[3] },
-        set(h){ const xywh=this.xywh; xywh[3]=this._sse.canvas.snap(h); this.xywh=xywh }
+        set(h){ const xywh=this.xywh; xywh[3]=this._sse.editor.snap(h); this.xywh=xywh }
     },
     xy: {
         get(){ return this.xywh.slice(0,2) },
-        set(xy){ const xywh=this.xywh; [xywh[0], xywh[1]]=this._sse.canvas.snap(xy); this.xywh=xywh }
+        set(xy){ const xywh=this.xywh; [xywh[0], xywh[1]]=this._sse.editor.snap(xy); this.xywh=xywh }
     },
     wh: {
         get(){ return this.xywh.slice(2) },
-        set(wh){ const xywh=this.xywh; [xywh[2], xywh[3]]=this._sse.canvas.snap(wh); this.xywh=xywh }
+        set(wh){ const xywh=this.xywh; [xywh[2], xywh[3]]=this._sse.editor.snap(wh); this.xywh=xywh }
     },
     xywh: {
         get(){
@@ -455,7 +456,7 @@ SSE.Transition = Object.defineProperties({
     radius:{
         get(){
             // This (intentionally) prevents completely square corners by ignoring values of 0
-            return this.getAttributeNS(nvNS, 'radius')*1 || this._sse.canvas.maxRadius || null;
+            return this.getAttributeNS(nvNS, 'radius')*1 || this._sse.editor.maxRadius || null;
         },
         set(r)
         {
@@ -645,4 +646,4 @@ function toHex255(n) {
     return (Math.round(n)%256).toString(16).padStart(2,'0');
 }
 
-export default SSE.Canvas;
+export default SSE.Editor;
