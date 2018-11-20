@@ -18,5 +18,9 @@
 		<transition nv:pts="S140" cond="cond" event="evt"><script><![CDATA[code]]></script></transition>
 		<transition nv:pts="S160" cond="cond"><script><![CDATA[code]]></script></transition>
 	</state>
-	<state id="B" nv:rgb="ffffff" nv:xywh="270 30 180 180"/>
+	<state id="B" nv:rgb="ffffff" nv:xywh="270 30 180 180">
+		<state id="B1" nv:xywh="320 80 80 40"/>
+		<state id="B2" nv:xywh="320 140 80 40"/>
+		<state id="B3" nv:xywh="320 200 80 40"/>
+	</state>
 </scxml>

@@ -6,14 +6,12 @@ const svgNS = 'http://www.w3.org/2000/svg';
 
 SSE.Editor = function(svg, scxmlDoc) {
     this.svg         = svg;
-    this.transCombos = {};
-    this.selection   = [];
-    this.g = {
-        shadows : make('g', {_dad:svg, id:'shadows'}),
-        content : make('g', {_dad:svg, id:'content'}),
-        transitions : make('g', {_dad:svg, id:'transitions'}),
-    };
-    this.gridSize = 10;
+    this.shadows     = make('g', {_dad:svg, id:'shadows'}),
+    this.content     = make('g', {_dad:svg, id:'content'}),
+    this.transitions = make('g', {_dad:svg, id:'transitions'}),
+    this.selection = [];
+
+    this.gridSize   = 10;
     this.gridActive = true;
     document.body.addEventListener('mousedown', this.select.bind(this), false);
 
@@ -60,8 +58,8 @@ SSE.Editor.prototype.addState = function(state) {
 
     const ego = state._sse = {
         editor   : this,
-        shadow   : make('rect', {_dad:this.g.shadows, rx:state.cornerRadius, ry:state.cornerRadius}),
-        main     : make('g', {_dad:this.g.content, transform:'translate(0,0)', 'class':'state'}),
+        shadow   : make('rect', {_dad:this.shadows, rx:state.cornerRadius, ry:state.cornerRadius}),
+        main     : make('g',    {_dad:this.content, transform:'translate(0,0)', 'class':'state'}),
     };
 
     ego.tx = ego.main.transform.baseVal.getItem(0);
@@ -92,7 +90,7 @@ SSE.Editor.prototype.addTransition = function(tran) {
     Object.setPrototypeOf(tran, SSE.Transition);
     const ego = tran._sse = {
         editor : this,
-        main   : make('g', {_dad:this.g.transitions, 'class':'transition'}),
+        main   : make('g', {_dad:this.transitions, 'class':'transition'}),
     };
     ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
     ego.path    = make('path', {_dad:ego.main, d:'M0,0', 'class':'transition'});
