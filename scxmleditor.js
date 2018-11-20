@@ -97,6 +97,7 @@ SSE.Editor.prototype.addTransition = function(tran) {
     ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
     ego.path    = make('path', {_dad:ego.main, d:'M0,0', 'class':'transition'});
 
+    tran.checkTarget();
     tran.checkScripts();
     tran.checkCondition();
 
@@ -434,12 +435,16 @@ SSE.Transition = Object.defineProperties({
         }
     },
 
+    checkTarget() {
+        this._sse.main.classList.toggle('targetless', !this.targetId);
+    },
+
     checkScripts() {
-        this._sse.path.classList.toggle('actions', this.scripts.length);
+        this._sse.main.classList.toggle('actions', this.scripts.length);
     },
 
     checkCondition() {
-        this._sse.path.classList.toggle('conditional', this.condition);
+        this._sse.main.classList.toggle('conditional', this.condition);
     },
 
     updateAttribute(attrNS, attrName){
@@ -448,6 +453,10 @@ SSE.Transition = Object.defineProperties({
         switch(attrName){
             case 'pts':
             case 'radius':
+                this.reroute();
+            break;
+            case 'target':
+                this.checkTarget();
                 this.reroute();
             break;
         }
@@ -531,12 +540,16 @@ function anchorOnState(state, side, offset, startState) {
     return anchor;
 }
 
-function svgPathFromAnchors(anchors, maxRadius=Infinity) {
+function svgPathFromAnchors(anchors, maxRadius=Infinity)
+{
     if (anchors.length===1) {
-        const [x,y] = [anchors[0].x, anchors[0].y];
-        return `M${x-0.01},${y} A${SSE.State.cornerRadius},${SSE.State.cornerRadius},0,1,0${x+0.01},${y}`;
+        const [x,y] = [anchors[0].x,anchors[0].y];
+        return `M${x},${y}M${x-7},${y+0.01}A7,7,0,1,0,${x-7},${y-0.01}`;
     }
-    if (!maxRadius) maxRadius = Infinity;
+    if (!maxRadius)
+    {
+        maxRadius = Infinity;
+    }
 
     // Calculate intersection points
     let prevPoint = anchors[0], nextPoint;
