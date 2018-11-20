@@ -42,33 +42,38 @@
 		.state.enter .enter { display:inline; }
 		.state.exit  .exit { display:inline; }
 
+		.transition.eventless path.transition
+		{
+			stroke-dasharray: 3 2
+		}
 
-		path.transition {
+
+		path.line {
 			stroke:#000; stroke-opacity:0.1; stroke-width:2px;
 			fill:none;
 			marker-start:url(#source);
 		}
-		.transition.conditional path.transition {
+		.transition.conditional path.line {
 			marker-start:url(#source-conditional);
 		}
 
-		.transition.targeted path.transition {
+		.transition.targeted path.line {
 			marker-end:url(#target);
 		}
-		.transition.targeted.actions path.transition {
+		.transition.targeted.actions path.line {
 			marker-end:url(#target-actions);
 		}
 
-		.transition.eventless.conditionless path.transition
+		.transition.eventless.conditionless path.line
 		{
 			stroke:red; stroke-opacity:1;
 			marker-start:url(#source-error);
 		}
-		.transition.eventless.conditionless.targeted path.transition
+		.transition.eventless.conditionless.targeted path.line
 		{
 			marker-end:url(#target-error);
 		}
-		.transition.eventless.conditionless.targeted.actions path.transition
+		.transition.eventless.conditionless.targeted.actions path.line
 		{
 			marker-end:url(#target-actions-error);
 		}
@@ -77,7 +82,7 @@
 			fill:transparent; stroke:transparent; stroke-width:8px;
 		}
 
-		.transition.selected path.transition {
+		.transition.selected path.line {
 			stroke-opacity:0.8; stroke-width:2px;
 		}
 		.transition.selected path.catcher {
@@ -85,24 +90,24 @@
 			stroke-linecap: round;
 		}
 
-		.transition.targetless path.transition {
+		.transition.targetless path.line {
 			stroke:none ! important;
 			marker-start:url(#targetless);
 			fill:transparent;
 		}
-		.transition.targetless.actions path.transition {
+		.transition.targetless.actions path.line {
 			marker-end:url(#targetless-actions);
 		}
-		.transition.targetless.conditional.actionless path.transition {
+		.transition.targetless.conditional.actionless path.line {
 			marker-start:url(#source-conditional-error);
 		}
-		.transition.targetless.conditional.actions path.transition {
+		.transition.targetless.conditional.actions path.line {
 			marker-start:url(#source-conditional);
 		}
-		.transition.targetless.eventless.conditionless.actions path.transition {
+		.transition.targetless.eventless.conditionless.actions path.line {
 			marker-end:url(#targetless-actions-error);
 		}
-		.transition.targetless.actionless path.transition {
+		.transition.targetless.actionless path.line {
 			marker-start:url(#source-error);
 		}
 

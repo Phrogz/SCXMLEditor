@@ -53,59 +53,13 @@ SSE.Editor.prototype.useSCXML = function(scxmlDoc) {
 SSE.Editor.prototype.addState = function(state) {
     // The root SCXML element does not get displayed visually
     if (state===this.scxmlDoc.root) return;
-
     Object.setPrototypeOf(state, SSE.State);
-
-    const ego = state._sse = {
-        editor   : this,
-        shadow   : make('rect', {_dad:this.shadows, rx:state.cornerRadius, ry:state.cornerRadius}),
-        main     : make('g',    {_dad:this.content, transform:'translate(0,0)', 'class':'state'}),
-    };
-
-    ego.tx = ego.main.transform.baseVal.getItem(0);
-    ego.rect  = make('rect', {_dad:ego.main, rx:state.cornerRadius, ry:state.cornerRadius});
-    ego.label = make('text', {_dad:ego.main, _text:state.id});
-    ego.enter = make('path', {_dad:ego.main, d:'M0,0', 'class':'enter'});
-    ego.exit  = make('path', {_dad:ego.main, d:'M0,0', 'class':'exit'});
-    this.makeDraggable(ego.main, state);
-
-    if (!state.getAttributeNS(nvNS,'xywh')) {
-        const [x,y,w,h] = state.parentNode.xywh || [0,0,2000,1000];
-        state.xywh = [x+this.gridSize*2, y+this.gridSize*3, 120, 40];
-    }
-
-    // Force generation of default values and updating from DOM
-    state.xywh = state.xywh;
-    state.rgb = state.rgb;
-    state.checkScripts();
-    state.checkChildren();
-
-    ego.main.addEventListener('mousedown', evt=>{
-        evt.stopPropagation();
-        this.select(evt, state);
-    }, false);
+    state.initialize(this);
 };
 
 SSE.Editor.prototype.addTransition = function(tran) {
     Object.setPrototypeOf(tran, SSE.Transition);
-    const ego = tran._sse = {
-        editor : this,
-        main   : make('g', {_dad:this.transitions, 'class':'transition'}),
-    };
-    ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
-    ego.path    = make('path', {_dad:ego.main, d:'M0,0', 'class':'transition'});
-
-    tran.checkCondition();
-    tran.checkEvent();
-    tran.checkTarget();
-    tran.checkScripts();
-
-    ego.main.addEventListener('mousedown', evt=>{
-        evt.stopPropagation();
-        this.select(evt, tran);
-    }, false);
-
-    tran.reroute();
+    tran.initialize(this);
 };
 
 SSE.Editor.prototype.makeDraggable = function(el, obj){
@@ -211,7 +165,41 @@ SSE.Editor.prototype.onDocChange = function(mutationList){
 SSE.State = Object.defineProperties({
     cornerRadius:10,
 
-    startDragging(sandbox){
+    initialize(editor)
+    {
+        const ego = this._sse = {
+            editor   : editor,
+            shadow   : make('rect', {_dad:editor.shadows, rx:this.cornerRadius, ry:this.cornerRadius}),
+            main     : make('g',    {_dad:editor.content, transform:'translate(0,0)', 'class':'state'}),
+        };
+
+        ego.tx = ego.main.transform.baseVal.getItem(0);
+        ego.rect  = make('rect', {_dad:ego.main, rx:this.cornerRadius, ry:this.cornerRadius});
+        ego.label = make('text', {_dad:ego.main, _text:this.id});
+        ego.enter = make('path', {_dad:ego.main, d:'M0,0', 'class':'enter'});
+        ego.exit  = make('path', {_dad:ego.main, d:'M0,0', 'class':'exit'});
+        editor.makeDraggable(ego.main, this);
+
+        if (!this.getAttributeNS(nvNS,'xywh')) {
+            const [x,y,w,h] = this.parentNode.xywh || [0,0,2000,1000];
+            this.xywh = [x+editor.gridSize*2, y+editor.gridSize*3, 120, 40];
+        }
+
+        // Force generation of default values and updating from DOM
+        this.xywh = this.xywh;
+        this.rgb = this.rgb;
+
+        this.checkScripts();
+        this.checkChildren();
+
+        ego.main.addEventListener('mousedown', evt=>{
+            evt.stopPropagation();
+            editor.select(evt, this);
+        }, false);
+    },
+
+    startDragging(sandbox)
+    {
         // Re-order this state to the top
         sandbox.starts = new Map([this, ...this.descendants].map(n => [n, n.xy]));
         for (const [n,xy] of sandbox.starts) {
@@ -219,7 +207,8 @@ SSE.State = Object.defineProperties({
         }
     },
 
-    handleDrag(dx, dy, sandbox) {
+    handleDrag(dx, dy, sandbox)
+    {
         for (const [s,xy] of sandbox.starts) s.xy = [xy[0]+dx, xy[1]+dy];
         for (const [s,xy] of sandbox.starts) {
             s.transitions.forEach(ƒ('reroute'));
@@ -227,21 +216,25 @@ SSE.State = Object.defineProperties({
         }
     },
 
-    select() {
+    select()
+    {
         this._sse.main.classList.add('selected');
     },
 
-    deselect() {
+    deselect()
+    {
         this._sse.main.classList.remove('selected');
     },
 
-    deleteGraphics() {
+    deleteGraphics()
+    {
         this._sse.shadow.remove();
         this._sse.main.remove();
         delete this._sse;
     },
 
-    updateAttribute(attrNS, attrName){
+    updateAttribute(attrNS, attrName)
+    {
         const val = this.getAttributeNS(attrNS, attrName);
         const ego = this._sse;
         switch(attrName){
@@ -272,30 +265,35 @@ SSE.State = Object.defineProperties({
         }
     },
 
-    checkContainment() {
+    checkContainment()
+    {
         this._sse.main.classList.toggle('containmentError', !this.containedWithin(this.parentNode));
         this.states.forEach(ƒ('checkContainment'));
     },
 
-    checkScripts() {
+    checkScripts()
+    {
         if (!this._sse) return;
         this._sse.main.classList.toggle('enter', this.enterScripts.length);
         this._sse.main.classList.toggle('exit',  this.exitScripts.length);
     },
 
-    checkChildren() {
+    checkChildren()
+    {
         if (!this._sse) return;
         this._sse.main.classList.toggle('parent', this.states.length);
         this.updateLabelPosition()
     },
 
-    updateLabelPosition() {
+    updateLabelPosition()
+    {
         const [x,y,w,h] = this.xywh;
         const top = this.states.length>0 ? 15 : h/2;
         setAttributes(this._sse.label, {x:w/2, y:top});
     },
 
-    containedWithin(s2) {
+    containedWithin(s2)
+    {
         if (s2.isSCXML) return true;
         const d1=this.xywh, d2=s2.xywh;
         return (d1[0]>=d2[0] && d1[1]>=d2[1] && (d1[0]+d1[2])<=(d2[0]+d2[2]) && (d1[1]+d1[3])<=(d2[1]+d2[3]));
@@ -360,6 +358,28 @@ SSE.State = Object.defineProperties({
 // ****************************************************************************
 
 SSE.Transition = Object.defineProperties({
+    initialize(editor)
+    {
+        const ego = this._sse = {
+            editor : editor,
+            main   : make('g', {_dad:editor.transitions, 'class':'transition'}),
+        };
+        ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
+        ego.path    = make('path', {_dad:ego.main, d:'M0,0', 'class':'line'});
+
+        this.checkCondition();
+        this.checkEvent();
+        this.checkTarget();
+        this.checkScripts();
+
+        ego.main.addEventListener('mousedown', evt=>{
+            evt.stopPropagation();
+            editor.select(evt, this);
+        }, false);
+
+        this.reroute();
+    },
+
     reroute(){
         const pts = [];
         pts.push(this.sourceXY);
