@@ -72,7 +72,7 @@ SSE.Editor.prototype.addState = function(state) {
     this.makeDraggable(ego.main, state);
 
     if (!state.getAttributeNS(nvNS,'xywh')) {
-        const [x,y,w,h] = state.parentNode.xywh;
+        const [x,y,w,h] = state.parentNode.xywh || [0,0,2000,1000];
         state.xywh = [x+this.gridSize*2, y+this.gridSize*3, 120, 40];
     }
 
@@ -97,9 +97,10 @@ SSE.Editor.prototype.addTransition = function(tran) {
     ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
     ego.path    = make('path', {_dad:ego.main, d:'M0,0', 'class':'transition'});
 
+    tran.checkCondition();
+    tran.checkEvent();
     tran.checkTarget();
     tran.checkScripts();
-    tran.checkCondition();
 
     ego.main.addEventListener('mousedown', evt=>{
         evt.stopPropagation();
@@ -330,7 +331,7 @@ SSE.State = Object.defineProperties({
         get(){
             let xywh=this.getAttributeNS(nvNS, 'xywh');
             if (xywh) return xywh.split(/\s+/).map(Number);
-            else return this.isSCXML ? [0,0,2000,1000] : [0,0,120,40];
+            else return [0,0,120,40];
         },
         set(xywh){ this.setAttributeNS(nvNS, 'xywh', xywh.join(' ')) }
     },
@@ -435,16 +436,24 @@ SSE.Transition = Object.defineProperties({
         }
     },
 
+    checkCondition() {
+        this._sse.main.classList.toggle('conditional',   this.condition);
+        this._sse.main.classList.toggle('conditionless', !this.condition);
+    },
+
+    checkEvent() {
+        this._sse.main.classList.toggle('event',     this.event);
+        this._sse.main.classList.toggle('eventless', !this.event);
+    },
+
     checkTarget() {
+        this._sse.main.classList.toggle('targeted',   this.targetId);
         this._sse.main.classList.toggle('targetless', !this.targetId);
     },
 
     checkScripts() {
-        this._sse.main.classList.toggle('actions', this.scripts.length);
-    },
-
-    checkCondition() {
-        this._sse.main.classList.toggle('conditional', this.condition);
+        this._sse.main.classList.toggle('actions',    this.scripts.length);
+        this._sse.main.classList.toggle('actionless', !this.scripts.length);
     },
 
     updateAttribute(attrNS, attrName){
@@ -495,7 +504,8 @@ SSE.Transition = Object.defineProperties({
                     case 'Y': anchors.push({y:offset*1, horiz:true }); break;
                     default:
                         const state = anchors.length ? this.target : this.parentNode;
-                        anchors.push(anchorOnState(state, direction, offset*1, state===this.parentNode));
+                        const anchor = anchorOnState(state, direction, offset*1, state===this.parentNode);
+                        if (anchor) anchors.push(anchor);
                 }
             }
             return anchors;
@@ -544,7 +554,7 @@ function svgPathFromAnchors(anchors, maxRadius=Infinity)
 {
     if (anchors.length===1) {
         const [x,y] = [anchors[0].x,anchors[0].y];
-        return `M${x},${y}M${x-7},${y+0.01}A7,7,0,1,0,${x-7},${y-0.01}`;
+        return `M${x},${y}M${x-5},${y+0.01}A5,5,0,1,0,${x-5},${y-0.01}M${x},${y}`;
     }
     if (!maxRadius)
     {

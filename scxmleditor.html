@@ -42,17 +42,35 @@
 		.state.enter .enter { display:inline; }
 		.state.exit  .exit { display:inline; }
 
+
 		path.transition {
 			stroke:#000; stroke-opacity:0.1; stroke-width:2px;
 			fill:none;
 			marker-start:url(#source);
-			marker-end:url(#target);
 		}
 		.transition.conditional path.transition {
 			marker-start:url(#source-conditional);
 		}
-		.transition.actions path.transition {
+
+		.transition.targeted path.transition {
+			marker-end:url(#target);
+		}
+		.transition.targeted.actions path.transition {
 			marker-end:url(#target-actions);
+		}
+
+		.transition.eventless.conditionless path.transition
+		{
+			stroke:red; stroke-opacity:1;
+			marker-start:url(#source-error);
+		}
+		.transition.eventless.conditionless.targeted path.transition
+		{
+			marker-end:url(#target-error);
+		}
+		.transition.eventless.conditionless.targeted.actions path.transition
+		{
+			marker-end:url(#target-actions-error);
 		}
 
 		.catcher {
@@ -67,12 +85,27 @@
 			stroke-linecap: round;
 		}
 
-		.transition.targetless.actions path.transition {
-			marker-start:url(#targetless-actions);
-			marker-end:none;
-			stroke:none;
+		.transition.targetless path.transition {
+			stroke:none ! important;
+			marker-start:url(#targetless);
 			fill:transparent;
 		}
+		.transition.targetless.actions path.transition {
+			marker-end:url(#targetless-actions);
+		}
+		.transition.targetless.conditional.actionless path.transition {
+			marker-start:url(#source-conditional-error);
+		}
+		.transition.targetless.conditional.actions path.transition {
+			marker-start:url(#source-conditional);
+		}
+		.transition.targetless.eventless.conditionless.actions path.transition {
+			marker-end:url(#targetless-actions-error);
+		}
+		.transition.targetless.actionless path.transition {
+			marker-start:url(#source-error);
+		}
+
 		.transition.targetless.selected path.catcher {
 			fill:yellow; fill-opacity:0.5;
 		}
@@ -86,16 +119,39 @@
 		<marker id='source-conditional' markerWidth='8' markerHeight='8' refX='4' refY='4'>
 			<circle cx='4' cy='4' r='1.5' style='fill:white; fill-opacity:0.9; stroke:black; stroke-width:0.5'/>
 		</marker>
+		<marker id='source-conditional-error' markerWidth='8' markerHeight='8' refX='4' refY='4'>
+			<circle cx='4' cy='4' r='1.5' style='fill:white; fill-opacity:0.9; stroke:red; stroke-width:0.5'/>
+		</marker>
+		<marker id='source-error' markerWidth='4' markerHeight='4' refX='2' refY='2'>
+			<circle cx='2' cy='2' r='1.5' style='fill:red; opacity:1'/>
+		</marker>
+
 		<marker id='target' orient='auto' markerWidth='4' markerHeight='4' refX='2.5' refY='2'>
 			<polygon points='0,0 0,4 4,2'/>
+		</marker>
+		<marker id='target-error' orient='auto' markerWidth='4' markerHeight='4' refX='2.5' refY='2'>
+			<polygon points='0,0 0,4 4,2' style='fill:red'/>
 		</marker>
 		<marker id='target-actions' orient='auto' markerWidth='7' markerHeight='6' refX='5.5' refY='3'>
 			<path d='M1.5,1 A0.3,0.8,0,0,1,1.5,5' style='fill:none; stroke:black; stroke-width:0.6; stroke-linejoin:round'/>
 			<polygon points='3,1 3,5 7,3'/>
 		</marker>
-		<marker id='targetless-actions' markerWidth='7' markerHeight='7' refX='3.5' refY='3.5'>
+		<marker id='target-actions-error' orient='auto' markerWidth='7' markerHeight='6' refX='5.5' refY='3'>
+			<path d='M1.5,1 A0.3,0.8,0,0,1,1.5,5' style='fill:none; stroke:red; stroke-width:0.6; stroke-linejoin:round'/>
+			<polygon points='3,1 3,5 7,3' style='fill:red'/>
+		</marker>
+
+		<marker id='targetless' markerWidth='7' markerHeight='7' refX='3.5' refY='3.5'>
 			<circle cx='3.5' cy='3.5' r='1.5' style='opacity:0.8'/>
+		</marker>
+		<marker id='targetless-actions' markerWidth='7' markerHeight='7' refX='3.5' refY='3.5'>
 			<circle cx='3.5' cy='3.5' r='2.8' style='fill:none; stroke:black; stroke-width:0.8'/>
+		</marker>
+		<marker id='targetless-error' markerWidth='7' markerHeight='7' refX='3.5' refY='3.5'>
+			<circle cx='3.5' cy='3.5' r='2.8' style='fill:none; stroke:red; stroke-width:0.8'/>
+		</marker>
+		<marker id='targetless-actions-error' markerWidth='7' markerHeight='7' refX='3.5' refY='3.5'>
+			<circle cx='3.5' cy='3.5' r='2.8' style='fill:none; stroke:red; stroke-width:0.8'/>
 		</marker>
 
 		<filter id='stateshadow' height='130%'>
@@ -114,7 +170,7 @@ import SCXMLEditor                  from './scxmleditor.js';
 import NeatXML                      from './neatxml.js';
 
 let $ed, $doc;
-loadSCXML('http://localhost:5000/test/launcher.scxml', doc => {
+loadSCXML('http://localhost:5000/test/AB.scxml', doc => {
 	$ed = new SCXMLEditor(document.querySelector('svg'), $doc=doc);
 	window.$doc = $doc;
 	window.$ed  = $ed;
@@ -123,7 +179,7 @@ loadSCXML('http://localhost:5000/test/launcher.scxml', doc => {
 window.serialize = function() {
 	// Uses custom XML serializer to work around
 	// https://bugs.chromium.org/p/chromium/issues/detail?id=906807
-	console.log(NeatXML($doc,{strip:true, indent:'\t', sort:true}));
+	console.log(NeatXML($doc,{strip:true, indent:'\t', sort:true, cdata:true}));
 }
 </script>
 
