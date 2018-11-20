@@ -42,11 +42,16 @@
 		.state.enter .enter { display:inline; }
 		.state.exit  .exit { display:inline; }
 
-		.transition.eventless path.transition
-		{
-			stroke-dasharray: 3 2
+		.transition text {
+			font-size:12px;
+			text-anchor:start;
+			dominant-baseline:hanging;
+			opacity:0.5;
 		}
 
+		.transition.targetless text {
+			text-anchor:middle;
+		}
 
 		path.line {
 			stroke:#000; stroke-opacity:0.1; stroke-width:2px;
@@ -64,6 +69,9 @@
 			marker-end:url(#target-actions);
 		}
 
+		.transition.eventless text {
+			display:none;
+		}
 		.transition.eventless.conditionless path.line
 		{
 			stroke:red; stroke-opacity:1;

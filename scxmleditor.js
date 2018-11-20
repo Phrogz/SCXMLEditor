@@ -20,19 +20,24 @@ SSE.Editor = function(svg, scxmlDoc) {
 
 Object.defineProperties(SSE.Editor.prototype, {
     maxRadius:{
-        get()
-        {
+        get() {
             return this._maxRadius || 100;
         },
-        set(r)
-        {
+        set(r) {
             this._maxRadius = r || Infinity;
-            if (this.scxmlDoc)
-            {
-                this.scxmlDoc.transitions.forEach(t => t.reroute());
-            }
+            if (this.scxmlDoc) this.scxmlDoc.transitions.forEach(t => t.reroute());
         }
-    }
+    },
+
+    eventOffset:{
+        get() {
+            return this._eventOffset || 7;
+        },
+        set(o) {
+            this._eventOffset = o;
+            if (this.scxmlDoc) this.scxmlDoc.transitions.forEach(t => t.reroute());
+        }
+    },
 });
 
 SSE.Editor.prototype.useSCXML = function(scxmlDoc) {
@@ -366,6 +371,7 @@ SSE.Transition = Object.defineProperties({
         };
         ego.catcher = make('path', {_dad:ego.main, d:'M0,0', 'class':'catcher'});
         ego.path    = make('path', {_dad:ego.main, d:'M0,0', 'class':'line'});
+        ego.label   = make('text', {_dad:ego.main, _text:this.event});
 
         this.checkCondition();
         this.checkEvent();
@@ -381,12 +387,31 @@ SSE.Transition = Object.defineProperties({
     },
 
     reroute(){
-        const pts = [];
-        pts.push(this.sourceXY);
-        if (this.targetId) pts.push(this.targetXY);
-        const path = svgPathFromAnchors(this.anchors, this.radius);
-        this._sse.path.setAttribute('d', path);
-        this._sse.catcher.setAttribute('d', path);
+        const ego = this._sse;
+        const anchors = this.anchors;
+        const path = svgPathFromAnchors(anchors, this.radius);
+        ego.path.setAttribute('d', path);
+        ego.catcher.setAttribute('d', path);
+
+        if (anchors.length==1) {
+            ego.label.setAttribute('x', anchors[0].x);
+            ego.label.setAttribute('y', anchors[0].y+ego.editor.eventOffset);
+        } else {
+            const pt = ego.path.getPointAtLength(ego.editor.eventOffset);
+            const dx = pt.x - anchors[0].x,
+                  dy = pt.y - anchors[0].y;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                ego.label.setAttribute('x', pt.x);
+                ego.label.setAttribute('y', pt.y);
+                ego.label.style.textAnchor = dx>0 ? 'start' : 'end';
+                ego.label.style.dominantBaseline = dx>0 ? 'text-before-edge' : 'text-after-edge';
+            } else {
+                ego.label.setAttribute('x', pt.x + (dy>0 ? 3 : -3));
+                ego.label.setAttribute('y', (anchors[0].y + pt.y)/2);
+                ego.label.style.textAnchor = dy>0 ? 'start' : 'end';
+                ego.label.style.dominantBaseline = dy>0 ? 'text-before-edge' : 'text-after-edge';
+            }
+        }
     },
 
     select() {
@@ -460,6 +485,7 @@ SSE.Transition = Object.defineProperties({
     },
 
     checkEvent() {
+        this._sse.label.textContent = this.event;
         this._sse.main.classList.toggle('event',     this.event);
         this._sse.main.classList.toggle('eventless', !this.event);
     },
